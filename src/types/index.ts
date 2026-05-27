@@ -74,14 +74,14 @@ export interface FilterPlayersQuery {
 // ─── SEP-10 ───────────────────────────────────────────────────────────────────
 
 export interface Sep10Challenge {
-  transaction: string; // XDR
+  challenge: string; // XDR
   networkPassphrase: string;
 }
 
 export interface Sep10Token {
   token: string;
   account: string;
-  expiresAt: number;
+  expiresAt: number; // Unix timestamp
 }
 
 // ─── Contract events (indexed) ────────────────────────────────────────────────

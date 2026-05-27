@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { submitMilestoneEvidence, getPendingMilestones } from '../controllers/validatorController';
-import { requireAuth } from '../middleware/auth';
+import { requireRole } from '../middleware/auth';
 
 const router = Router();
 
-router.post('/milestone', requireAuth, submitMilestoneEvidence);
-router.get('/milestones/pending', requireAuth, getPendingMilestones);
+router.post('/milestone', requireRole('validator'), submitMilestoneEvidence);
+router.get('/milestones/pending', requireRole('validator'), getPendingMilestones);
 
 export default router;

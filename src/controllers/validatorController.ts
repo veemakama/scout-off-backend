@@ -6,15 +6,20 @@ import { getEvents } from '../services/indexer';
 const milestoneSchema = z.object({
   playerId: z.string().min(1),
   milestoneType: z.enum(['identity', 'performance', 'trial_offer']),
-  evidence: z.record(z.unknown()),
+  evidenceUri: z.string().min(1),
+});
+
+const pendingQuerySchema = z.object({
+  region: z.string().optional(),
+  playerId: z.string().optional(),
 });
 
 /** POST /api/validators/milestone */
 export async function submitMilestoneEvidence(req: Request, res: Response, next: NextFunction) {
   try {
-    const { playerId, milestoneType, evidence } = milestoneSchema.parse(req.body);
-    const cid = await pinJson({ playerId, milestoneType, ...evidence });
-    res.status(201).json({ success: true, data: { evidenceUri: cid } });
+    const { playerId, milestoneType, evidenceUri } = milestoneSchema.parse(req.body);
+    const evidenceCid = await pinJson({ playerId, milestoneType, evidenceUri });
+    res.status(201).json({ success: true, data: { evidenceCid } });
   } catch (err) {
     next(err);
   }
@@ -23,11 +28,14 @@ export async function submitMilestoneEvidence(req: Request, res: Response, next:
 /** GET /api/validators/milestones/pending */
 export async function getPendingMilestones(req: Request, res: Response, next: NextFunction) {
   try {
+    const { region, playerId } = pendingQuerySchema.parse(req.query);
     const submitted = getEvents('milestone_submitted').map((e) => e.payload);
     const approvedIds = new Set(
       getEvents('milestone_approved').map((e) => e.payload.milestone_id)
     );
-    const pending = submitted.filter((m) => !approvedIds.has(m.milestone_id));
+    let pending = submitted.filter((m) => !approvedIds.has(m.milestone_id));
+    if (region) pending = pending.filter((m) => m.region === region);
+    if (playerId) pending = pending.filter((m) => m.playerId === playerId || m.player_id === playerId);
     res.json({ success: true, data: pending });
   } catch (err) {
     next(err);

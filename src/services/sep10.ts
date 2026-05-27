@@ -42,7 +42,7 @@ export function buildChallenge(accountId: string): string {
 /**
  * Verify the client-signed challenge XDR and issue a JWT.
  */
-export function verifyAndIssueToken(xdr: string): { token: string; account: string } {
+export function verifyAndIssueToken(xdr: string, role?: string): { token: string; account: string } {
   const network =
     config.network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
 
@@ -64,7 +64,7 @@ export function verifyAndIssueToken(xdr: string): { token: string; account: stri
 
   if (!valid) throw new Error('Invalid challenge signature');
 
-  const token = jwt.sign({ sub: clientAccountId }, config.jwtSecret, {
+  const token = jwt.sign({ sub: clientAccountId, role: role ?? 'player' }, config.jwtSecret, {
     expiresIn: TOKEN_TTL_SECONDS,
   });
 
