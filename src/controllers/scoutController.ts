@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { getEvents } from '../services/indexer';
-import { ApiResponse } from '../types';
+import { ok, normalizeTimestamps } from '../utils/response';
+
+const SUBSCRIPTION_TS_FIELDS = ['expiry', 'subscription_expiry', 'subscriptionExpiry'];
+const CONTACT_TS_FIELDS = ['unlocked_at', 'unlockedAt'];
 
 /** GET /api/scouts/:wallet/subscription */
 export async function getSubscription(req: Request, res: Response, next: NextFunction) {
@@ -8,7 +11,8 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
     const { wallet } = req.params;
     const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === wallet);
     const latest = subs.at(-1);
-    res.json({ success: true, data: latest?.payload ?? null });
+    const data = latest ? normalizeTimestamps(latest.payload, SUBSCRIPTION_TS_FIELDS) : null;
+    res.json(ok(data));
   } catch (err) {
     next(err);
   }
@@ -19,7 +23,7 @@ export async function getUnlockedContacts(req: Request, res: Response, next: Nex
   try {
     const { wallet } = req.params;
     const contacts = getEvents('contact_unlocked').filter((e) => e.payload.scout === wallet);
-    res.json({ success: true, data: contacts.map((e) => e.payload) });
+    res.json(ok(contacts.map((e) => normalizeTimestamps(e.payload, CONTACT_TS_FIELDS))));
   } catch (err) {
     next(err);
   }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pinJson, gatewayUrl } from '../services/ipfs';
 import { getEvents } from '../services/indexer';
 import { ApiResponse } from '../types';
+import { ok, paginated } from '../utils/response';
 
 const registerSchema = z.object({
   wallet: z.string().min(56).max(56),
@@ -15,6 +16,8 @@ const filterSchema = z.object({
   region: z.string().optional(),
   position: z.string().optional(),
   minTier: z.coerce.number().int().min(0).max(3).optional(),
+  sortBy: z.enum(['tier', 'region']).optional(),
+  sortOrder: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -44,23 +47,35 @@ export async function getPlayer(req: Request, res: Response, next: NextFunction)
       res.status(404).json({ success: false, error: 'Player not found' });
       return;
     }
-    res.json({ success: true, data: events[0].payload });
+    res.json(ok(events[0].payload));
   } catch (err) {
     next(err);
   }
 }
 
-/** GET /api/players?region=&position=&minTier= */
+/** GET /api/players?region=&position=&minTier=&sortBy=&sortOrder= */
 export async function filterPlayers(req: Request, res: Response, next: NextFunction) {
   try {
-    const { region, position, minTier, page, pageSize } = filterSchema.parse(req.query);
+    const { region, position, minTier, sortBy, sortOrder, page, pageSize } =
+      filterSchema.parse(req.query);
     let players = getEvents('player_registered').map((e) => e.payload);
     if (region) players = players.filter((p) => p.region === region);
     if (position) players = players.filter((p) => p.position === position);
     if (minTier !== undefined)
       players = players.filter((p) => Number(p.progress_level) >= minTier);
-    const paginated = players.slice((page - 1) * pageSize, page * pageSize);
-    res.json({ success: true, data: paginated, total: players.length, page, pageSize });
+
+    if (sortBy) {
+      const key = sortBy === 'tier' ? 'progress_level' : 'region';
+      players = [...players].sort((a, b) => {
+        const av = String(a[key] ?? '');
+        const bv = String(b[key] ?? '');
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return sortOrder === 'desc' ? -cmp : cmp;
+      });
+    }
+
+    const slice = players.slice((page - 1) * pageSize, page * pageSize);
+    res.json(paginated(slice, players.length, page, pageSize));
   } catch (err) {
     next(err);
   }
@@ -72,7 +87,7 @@ export async function getPlayerMilestones(req: Request, res: Response, next: Nex
     const milestones = getEvents('milestone_approved').filter(
       (e) => e.payload.player_id === req.params.playerId
     );
-    res.json({ success: true, data: milestones });
+    res.json(ok(milestones));
   } catch (err) {
     next(err);
   }
