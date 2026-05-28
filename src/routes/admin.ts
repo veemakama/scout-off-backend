@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { getAllEvents, getFeeSummary } from '../controllers/adminController';
-import { requireAuth } from '../middleware/auth';
+import { requireRole } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/events', requireAuth, getAllEvents);
-router.get('/fees', requireAuth, getFeeSummary);
+// Admin-only routes: reject any token that does not carry the 'admin' role.
+router.get('/events', requireRole('admin'), getAllEvents);
+router.get('/fees', requireRole('admin'), getFeeSummary);
 
 export default router;
