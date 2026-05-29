@@ -5,14 +5,14 @@ import { getEvents } from '../services/indexer';
 import { invalidatePlayerCache } from '../services/cache';
 import { ApiResponse } from '../types';
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   wallet: z.string().min(56).max(56),
   position: z.string().min(1),
   region: z.string().min(1),
   metadata: z.record(z.unknown()),
 });
 
-const filterSchema = z.object({
+export const filterSchema = z.object({
   region: z.string().optional(),
   position: z.string().optional(),
   minTier: z.coerce.number().int().min(0).max(3).optional(),
