@@ -166,6 +166,7 @@ Example: A validator submits "Scored 5 goals in Local Cup" → Soroban contract 
 | `GET` | `/api/scouts/:wallet/contacts` | Bearer | Unlocked contacts |
 | `POST` | `/api/validators/milestone` | Bearer | Pin evidence, return CID |
 | `GET` | `/api/validators/milestones/pending` | Bearer | Pending milestone approvals |
+| `GET` | `/api/admin/stats` | Bearer (admin) | Platform counts: players, milestones, subscriptions, events |
 | `GET` | `/api/admin/events` | Bearer | All indexed contract events |
 | `GET` | `/api/admin/fees` | Bearer | Fee withdrawal history |
 
@@ -305,6 +306,15 @@ npm install
 npm run dev
 ```
 
+**Available npm scripts:**
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `npm run dev` | `ts-node-dev --respawn --transpile-only src/index.ts` | Start with hot-reload for development |
+| `npm run build` | `tsc` | Compile TypeScript to `dist/` |
+| `npm start` | `node dist/index.js` | Run the compiled server (run `build` first) |
+| `npm test` | `jest --runInBand` | Run the test suite |
+
 On startup the server will:
 - Open (or create) a SQLite database at `DB_PATH` (default: `scout-off.db`)
 - Begin polling Soroban for contract events every 5 seconds
@@ -357,6 +367,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment instructions.
 | `PLATFORM_FEE_BPS`        | Platform fee in basis points (default: 500)         |
 | `PORT`                    | Backend API port (default: 4000)                    |
 | `DB_PATH`                 | SQLite database file path (default: `scout-off.db`) |
+| `LOG_LEVEL`               | Log verbosity: `debug`, `info`, `warn`, `error` (default: `info`) |
+| `STELLAR_HEALTH_CHECK_ENABLED` | Include Stellar RPC in `/health` response (default: `true`; set `false` to disable in staging) |
 
 ## Testing
 
