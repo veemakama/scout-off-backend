@@ -36,14 +36,23 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
 }
 
 /** GET /api/scouts/:wallet/contacts */
+/** GET /api/scouts/:wallet/contacts */
 export async function getUnlockedContacts(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
+    const { playerId } = req.query as { playerId?: string };
+
     if ((req as any).account !== wallet) {
       res.status(401).json({ success: false, error: 'Unauthorized' });
       return;
     }
-    const contacts = getEvents('contact_unlocked').filter((e) => e.payload.scout === wallet);
+
+    let contacts = getEvents('contact_unlocked').filter((e) => e.payload.scout === wallet);
+
+    if (playerId) {
+      contacts = contacts.filter((e) => e.payload.playerId === playerId);
+    }
+
     res.json({
       success: true,
       data: contacts.map((e) => ({
