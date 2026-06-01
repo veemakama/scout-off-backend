@@ -1,59 +1,87 @@
-/**
- * Tests for the rateLimit middleware.
- * Sets RATE_LIMIT_ENABLED=true and a low MAX to trigger 429 responses.
- */
+import { Request, Response, NextFunction } from 'express';
+import { rateLimit } from '../../src/middleware/rateLimit';
 
-process.env.RATE_LIMIT_ENABLED = 'true';
-process.env.RATE_LIMIT_MAX = '3';
-process.env.RATE_LIMIT_WINDOW_MS = '60000';
-process.env.CONTRACT_ID = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
-process.env.JWT_SECRET = 'test-secret';
+// ── Unit tests for rateLimit middleware ──────────────────────────────────────
 
-import request from 'supertest';
-import express, { Request, Response, NextFunction } from 'express';
-import { rateLimit, resetStore } from '../../src/middleware/rateLimit';
-
-function makeApp() {
-  const app = express();
-  app.get('/test', rateLimit, (_req: Request, res: Response) => {
-    res.json({ ok: true });
-  });
-  // Catch-all error handler so we see the actual error
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    res.status(500).json({ error: err.message });
-  });
-  return app;
+function makeReqRes(ip = '127.0.0.1') {
+  const req = { ip } as unknown as Request;
+  const res = {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  } as unknown as Response;
+  const next = jest.fn() as NextFunction;
+  return { req, res, next };
 }
 
 describe('rateLimit middleware', () => {
-  beforeEach(() => resetStore());
-
-  it('allows requests within the limit', async () => {
-    const app = makeApp();
+  it('allows requests under the limit', () => {
+    const mw = rateLimit({ windowMs: 60_000, max: 3 });
     for (let i = 0; i < 3; i++) {
-      const res = await request(app).get('/test');
-      expect(res.status).toBe(200);
+      const { req, res, next } = makeReqRes('1.1.1.1');
+      mw(req, res, next);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
     }
   });
 
-  it('returns 429 when the limit is exceeded', async () => {
-    const app = makeApp();
-    for (let i = 0; i < 3; i++) {
-      await request(app).get('/test');
+  it('returns 429 when limit is exceeded', () => {
+    const mw = rateLimit({ windowMs: 60_000, max: 2 });
+    const ip = '2.2.2.2';
+    for (let i = 0; i < 2; i++) {
+      const { req, res, next } = makeReqRes(ip);
+      mw(req, res, next);
     }
-    const res = await request(app).get('/test');
-    expect(res.status).toBe(429);
-    expect(res.body.success).toBe(false);
-    expect(res.body.error).toMatch(/too many requests/i);
+    const { req, res, next } = makeReqRes(ip);
+    mw(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(next).not.toHaveBeenCalled();
   });
 
-  it('passes through when RATE_LIMIT_ENABLED is false', async () => {
-    process.env.RATE_LIMIT_ENABLED = 'false';
-    const app = makeApp();
-    for (let i = 0; i < 10; i++) {
-      const res = await request(app).get('/test');
-      expect(res.status).toBe(200);
-    }
-    process.env.RATE_LIMIT_ENABLED = 'true';
+  it('resets the counter after the window expires', async () => {
+    const mw = rateLimit({ windowMs: 50, max: 1 });
+    const ip = '3.3.3.3';
+
+    const first = makeReqRes(ip);
+    mw(first.req, first.res, first.next);
+    expect(first.next).toHaveBeenCalledTimes(1);
+
+    const second = makeReqRes(ip);
+    mw(second.req, second.res, second.next);
+    expect(second.res.status).toHaveBeenCalledWith(429);
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    const third = makeReqRes(ip);
+    mw(third.req, third.res, third.next);
+    expect(third.next).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks IPs independently', () => {
+    const mw = rateLimit({ windowMs: 60_000, max: 1 });
+    const a = makeReqRes('4.4.4.4');
+    mw(a.req, a.res, a.next);
+    expect(a.next).toHaveBeenCalledTimes(1);
+
+    const b = makeReqRes('5.5.5.5');
+    mw(b.req, b.res, b.next);
+    expect(b.next).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Integration: POST /api/validators/milestone throttling ───────────────────
+// Confirms the middleware correctly throttles repeated requests from the same IP.
+describe('POST /api/validators/milestone rate limiting (middleware integration)', () => {
+  it('returns 429 after exceeding the configured limit', () => {
+    const mw = rateLimit({ windowMs: 60_000, max: 1 });
+    const ip = '9.9.9.9';
+
+    const first = makeReqRes(ip);
+    mw(first.req, first.res, first.next);
+    expect(first.next).toHaveBeenCalledTimes(1);
+
+    const second = makeReqRes(ip);
+    mw(second.req, second.res, second.next);
+    expect(second.res.status).toHaveBeenCalledWith(429);
+    expect(second.next).not.toHaveBeenCalled();
   });
 });

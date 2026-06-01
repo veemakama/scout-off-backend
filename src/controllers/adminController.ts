@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { getEvents } from '../services/indexer';
 import { AdminEvent, FeeHistoryItem, ApiResponse } from '../types';
 
@@ -20,6 +21,12 @@ export async function getStats(req: Request, res: Response, next: NextFunction) 
     next(err);
   }
 }
+
+const eventsQuerySchema = z.object({
+  eventType: z.string().optional(),
+  startDate: z.coerce.number().optional(),
+  endDate: z.coerce.number().optional(),
+});
 
 /** GET /api/admin/events */
 export async function getAllEvents(req: Request, res: Response, next: NextFunction) {

@@ -1,51 +1,35 @@
 import { Request, Response, NextFunction } from 'express';
 
+interface RateLimitOptions {
+  windowMs?: number; // time window in ms (default: 60_000)
+  max?: number;      // max requests per window per IP (default: 10)
+}
+
 /**
- * In-memory rate limiter middleware.
- *
- * Enabled via RATE_LIMIT_ENABLED=true env var.
- * Default limits are defined in config defaults below.
- *
- * Returns HTTP 429 when the request count exceeds the window limit.
+ * Simple in-process IP-based rate limiter.
+ * Configurable via windowMs and max; excess requests return HTTP 429.
  */
+export function rateLimit(options: RateLimitOptions = {}) {
+  const windowMs = options.windowMs ?? 60_000;
+  const max = options.max ?? 10;
+  const hits = new Map<string, { count: number; resetAt: number }>();
 
-const WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000', 10);
-const MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX ?? '60', 10);
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const ip = req.ip ?? 'unknown';
+    const now = Date.now();
+    const entry = hits.get(ip);
 
-interface WindowEntry {
-  count: number;
-  resetAt: number;
-}
+    if (!entry || now >= entry.resetAt) {
+      hits.set(ip, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
 
-const store = new Map<string, WindowEntry>();
-
-/** Clears the in-memory store — intended for use in tests only. */
-export function resetStore(): void {
-  store.clear();
-}
-
-export function rateLimit(req: Request, res: Response, next: NextFunction): void {
-  if (process.env.RATE_LIMIT_ENABLED !== 'true') {
+    entry.count += 1;
+    if (entry.count > max) {
+      res.status(429).json({ success: false, error: 'Too many requests, please try again later' });
+      return;
+    }
     next();
-    return;
-  }
-
-  const key = req.ip ?? 'unknown';
-  const now = Date.now();
-  const entry = store.get(key);
-
-  if (!entry || now > entry.resetAt) {
-    store.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    next();
-    return;
-  }
-
-  entry.count += 1;
-
-  if (entry.count > MAX_REQUESTS) {
-    res.status(429).json({ success: false, error: 'Too many requests, please try again later.' });
-    return;
-  }
-
-  next();
+  };
 }
