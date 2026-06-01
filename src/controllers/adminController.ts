@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { getEvents } from '../services/indexer';
-import { AdminEvent, FeeHistoryItem, ApiResponse } from '../types';
+import { EventRecord, ApiResponse } from '../types';
+import { logAuditEvent } from '../services/audit';
 
 const STELLAR_ADDRESS_RE = /^G[A-Z2-7]{55}$/;
 
@@ -24,8 +25,8 @@ export async function getStats(req: Request, res: Response, next: NextFunction) 
 /** GET /api/admin/events */
 export async function getAllEvents(req: Request, res: Response, next: NextFunction) {
   try {
-    const events = getEvents() as unknown as AdminEvent[];
-    const body: ApiResponse<AdminEvent[]> = { success: true, data: events };
+    const events = getEvents() as unknown as EventRecord[];
+    const body: ApiResponse<EventRecord[]> = { success: true, data: events };
     res.json(body);
   } catch (err) {
     next(err);
@@ -35,8 +36,15 @@ export async function getAllEvents(req: Request, res: Response, next: NextFuncti
 /** GET /api/admin/fees — returns fees_withdrawn event payloads */
 export async function getFeeSummary(req: Request, res: Response, next: NextFunction) {
   try {
-    const withdrawals = getEvents('fees_withdrawn').map((e) => e.payload as unknown as FeeHistoryItem);
-    const body: ApiResponse<FeeHistoryItem[]> = { success: true, data: withdrawals };
+    const adminWallet = (req as any).account as string ?? 'unknown';
+    logAuditEvent({
+      action: 'fee_history_query',
+      adminWallet,
+      queryParams: req.query as Record<string, unknown>,
+      timestamp: new Date().toISOString(),
+    });
+    const withdrawals = getEvents('fees_withdrawn').map((e) => e.payload as Record<string, unknown>);
+    const body: ApiResponse<Record<string, unknown>[]> = { success: true, data: withdrawals };
     res.json(body);
   } catch (err) {
     next(err);
