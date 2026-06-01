@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { getAllEvents, getFeeSummary, registerValidator, revokeValidator } from '../controllers/adminController';
-import { exportEvents } from '../controllers/exportController';
+import { getStats, getAllEvents, getFeeSummary, registerValidator, revokeValidator } from '../controllers/adminController';
 import { requireAuth, requireRole } from '../middleware/auth';
 
 const router = Router();
