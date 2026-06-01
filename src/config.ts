@@ -51,6 +51,11 @@ const config = {
     enabled: process.env.WEBHOOK_ENABLED === 'true',
     url: process.env.WEBHOOK_URL ?? ''
   },
+  rateLimit: {
+    enabled: process.env.RATE_LIMIT_ENABLED === 'true',
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000', 10),
+    max: parseInt(process.env.RATE_LIMIT_MAX ?? '60', 10),
+  },
 };
 
 export default config;
