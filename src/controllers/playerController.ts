@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { pinJson, gatewayUrl } from '../services/ipfs';
 import { getEvents } from '../services/indexer';
 import { invalidatePlayerCache } from '../services/cache';
-import { ApiResponse } from '../types';
-import { validateMinTier } from '../utils/minTierValidator';
+import { ApiResponse, ProgressLevel } from '../types';
+import { getTierMeta } from '../utils/tier';
 
 export const registerSchema = z.object({
   wallet: z.string().min(56).max(56),
@@ -74,10 +74,32 @@ export async function filterPlayers(req: Request, res: Response, next: NextFunct
     let players = getEvents('player_registered').map((e) => e.payload);
     if (sanitizedRegion) players = players.filter((p) => p.region === sanitizedRegion);
     if (sanitizedPosition) players = players.filter((p) => p.position === sanitizedPosition);
-    if (tierResult.tier !== undefined)
-      players = players.filter((p) => Number(p.progress_level) >= tierResult.tier!);
+    if (minTier !== undefined)
+      players = players.filter((p) => Number(p.progress_level) >= minTier);
+    const total = players.length;
+    const pages = Math.ceil(total / pageSize);
     const paginated = players.slice((page - 1) * pageSize, page * pageSize);
-    res.json({ success: true, data: paginated, total: players.length, page, pageSize });
+    res.json({ success: true, data: paginated, total, page, pageSize, pages });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * PUT /api/players/:playerId
+ * Required permissions: caller must be the profile owner (JWT sub === playerId).
+ * Stub — returns 202 Accepted until on-chain update is wired.
+ */
+export const updatePlayerSchema = z.object({
+  position: z.string().min(1).optional(),
+  region: z.string().min(1).optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export async function updatePlayer(req: Request, res: Response, next: NextFunction) {
+  try {
+    updatePlayerSchema.parse(req.body);
+    res.status(202).json({ success: true, message: 'Profile update accepted' });
   } catch (err) {
     next(err);
   }
