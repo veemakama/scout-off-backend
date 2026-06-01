@@ -37,6 +37,19 @@ export class PaymentError extends Error {
 }
 
 /**
+ * Ping the Soroban RPC to verify network reachability.
+ * Returns true if the network responds, false otherwise.
+ */
+export async function stellarHealth(): Promise<boolean> {
+  try {
+    await server.getLatestLedger();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Stub: submit a pay-to-contact micro-fee on Stellar.
  * Replace the body with real Soroban invocation when ready.
  */

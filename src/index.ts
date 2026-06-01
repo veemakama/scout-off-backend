@@ -11,6 +11,7 @@ import { securityHeaders } from './middleware/securityHeaders';
 import { indexEvents } from './services/indexer';
 import { logger } from './utils/logger';
 import { stellarHealth } from './services/stellar';
+import { checkHealth } from './services/ipfs';
 
 const app = express();
 

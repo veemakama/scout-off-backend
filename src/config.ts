@@ -25,6 +25,9 @@ const config = {
   },
   platformFeeBps: parseInt(process.env.PLATFORM_FEE_BPS ?? '500', 10),
   dbPath: process.env.DB_PATH ?? 'scout-off.db',
+  logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error',
+  stellarHealthCheckEnabled: process.env.STELLAR_HEALTH_CHECK !== 'false',
+  adminWallet: process.env.ADMIN_WALLET ?? '',
   securityHeaders: {
     hsts: process.env.SECURITY_HSTS ?? 'max-age=31536000; includeSubDomains',
     xContentTypeOptions: process.env.SECURITY_X_CONTENT_TYPE_OPTIONS ?? 'nosniff',

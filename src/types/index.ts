@@ -58,6 +58,21 @@ export interface ContactUnlock {
   unlockedAt: number;
 }
 
+// ─── Admin ────────────────────────────────────────────────────────────────────
+
+export interface AdminEvent {
+  type: ContractEventType;
+  ledger: number;
+  txHash: string;
+  payload: Record<string, unknown>;
+}
+
+export interface FeeHistoryItem {
+  amount: number;
+  recipient: string;
+  ledger: number;
+}
+
 // ─── API shapes ───────────────────────────────────────────────────────────────
 
 export interface ApiResponse<T = unknown> {
