@@ -7,6 +7,7 @@ import scoutRoutes from './routes/scout';
 import validatorRoutes from './routes/validator';
 import adminRoutes from './routes/admin';
 import { errorHandler } from './middleware/errorHandler';
+import { requestLogger } from './middleware/requestLogger';
 import { securityHeaders } from './middleware/securityHeaders';
 import { correlationId } from './middleware/correlationId';
 import { indexEvents } from './services/indexer';
@@ -21,6 +22,7 @@ app.use(correlationId);
 app.use(securityHeaders);
 app.use(responseTime);
 app.use(express.json());
+app.use(requestLogger);
 
 app.get('/health', async (_req, res) => {
   const healthStatus: Record<string, 'ok' | 'error' | 'disabled'> = {};
