@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { getEvents } from '../services/indexer';
-import { submitContactPayment, PaymentError } from '../services/stellar';
+import { submitContactPayment, isSubscribed, PaymentError } from '../services/stellar';
 import { ApiResponse } from '../types';
 
 /** GET /api/scouts/:wallet/subscription */
@@ -11,6 +11,14 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
       res.status(401).json({ success: false, error: 'Unauthorized' });
       return;
     }
+
+    // On-chain verification stub — falls back to indexed events when stub returns inactive
+    const onChain = await isSubscribed(wallet);
+    if (onChain.active) {
+      res.json({ success: true, data: { active: true, tier: 'basic', expiresAt: onChain.expiresAt, remainingDays: null } });
+      return;
+    }
+
     const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === wallet);
     const latest = subs.at(-1);
     if (!latest) {
