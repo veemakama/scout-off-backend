@@ -107,7 +107,13 @@ export async function revokeValidator(req: Request, res: Response, next: NextFun
 export async function pauseContract(req: Request, res: Response, next: NextFunction) {
   try {
     const adminWallet = (req as any).account as string;
-    console.info(`[admin] action=pause_contract admin=${adminWallet}`);
+    logAuditEvent({
+      action: 'contract_state_change',
+      adminWallet,
+      queryParams: {},
+      timestamp: new Date().toISOString(),
+      contractAction: 'pause_contract',
+    });
     // NOTE: Contract-level pause is simulated. Real invocation will call pause() on the Soroban contract.
     res.status(202).json({
       success: true,
@@ -126,7 +132,13 @@ export async function pauseContract(req: Request, res: Response, next: NextFunct
 export async function unpauseContract(req: Request, res: Response, next: NextFunction) {
   try {
     const adminWallet = (req as any).account as string;
-    console.info(`[admin] action=unpause_contract admin=${adminWallet}`);
+    logAuditEvent({
+      action: 'contract_state_change',
+      adminWallet,
+      queryParams: {},
+      timestamp: new Date().toISOString(),
+      contractAction: 'unpause_contract',
+    });
     // NOTE: Contract-level unpause is simulated. Real invocation will call unpause() on the Soroban contract.
     res.status(202).json({
       success: true,
