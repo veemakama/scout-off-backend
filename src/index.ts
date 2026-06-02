@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import config from './config';
+import config, { API_PREFIX, API_V1_PREFIX } from './config';
 import authRoutes from './routes/auth';
 import playerRoutes from './routes/player';
 import scoutRoutes from './routes/scout';
@@ -73,10 +73,15 @@ app.get('/health/readiness', async (_req, res) => {
 });
 
 app.use('/auth', authRoutes);
-app.use('/api/players', playerRoutes);
-app.use('/api/scouts', scoutRoutes);
-app.use('/api/validators', validatorRoutes);
-app.use('/api/admin', adminRoutes);
+
+// Mount API routes under both /api (backwards-compatible alias) and /api/v1
+const prefixes = [API_PREFIX, API_V1_PREFIX];
+for (const prefix of prefixes) {
+  app.use(`${prefix}/players`, playerRoutes);
+  app.use(`${prefix}/scouts`, scoutRoutes);
+  app.use(`${prefix}/validators`, validatorRoutes);
+  app.use(`${prefix}/admin`, adminRoutes);
+}
 
 app.use(errorHandler);
 
