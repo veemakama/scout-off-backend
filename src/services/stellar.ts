@@ -11,9 +11,6 @@ export function networkPassphrase(): string {
     : Networks.TESTNET;
 }
 
-/**
- * Fetch the latest ledger sequence — used to set transaction time bounds.
- */
 export async function getLatestLedger(): Promise<number> {
   const ledger = await server.getLatestLedger();
   return ledger.sequence;
@@ -38,7 +35,6 @@ export class PaymentError extends Error {
 
 /**
  * Ping the Soroban RPC to verify network reachability.
- * Returns true if the network responds, false otherwise.
  */
 export async function stellarHealth(): Promise<boolean> {
   try {
@@ -50,8 +46,22 @@ export async function stellarHealth(): Promise<boolean> {
 }
 
 /**
+ * Stub: check whether a scout has an active on-chain subscription.
+ * Replace with a real Soroban `is_subscribed` contract call when ready.
+ */
+export async function isSubscribed(
+  scoutWallet: string,
+): Promise<{ active: boolean; expiresAt: string | null }> {
+  if (!scoutWallet) {
+    throw new PaymentError('Missing scoutWallet', 'INVALID_ACCOUNT');
+  }
+  // TODO: invoke is_subscribed on the Soroban contract
+  return { active: false, expiresAt: null };
+}
+
+/**
  * Stub: submit a pay-to-contact micro-fee on Stellar.
- * Replace the body with real Soroban invocation when ready.
+ * Replace with real Soroban invocation when ready.
  */
 export async function submitContactPayment(
   scoutWallet: string,

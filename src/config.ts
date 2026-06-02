@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import { z } from 'zod';
 dotenv.config();
 
 function required(key: string): string {
@@ -61,7 +60,7 @@ const config = {
   },
   webhook: {
     enabled: process.env.WEBHOOK_ENABLED === 'true',
-    url: process.env.WEBHOOK_URL ?? ''
+    url: process.env.WEBHOOK_URL ?? '',
   },
   rateLimit: {
     enabled: process.env.RATE_LIMIT_ENABLED !== 'false',
