@@ -8,6 +8,9 @@ import { logger } from '../utils/logger';
  */
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const ip = extractClientIp(req);
-  logger.info(`[request] ${req.method} ${req.path} ip=${ip}`);
+  const correlationId: string | undefined = (req as any).correlationId;
+  logger.info(
+    `[request] ${req.method} ${req.path} ip=${ip}${correlationId ? ` correlationId=${correlationId}` : ''}`
+  );
   next();
 }
