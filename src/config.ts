@@ -25,6 +25,14 @@ const ConfigSchema = z.object({
   dbPath: z.string().default('scout-off.db'),
 });
 
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+}
+
 const config = {
   port: parseInt(process.env.PORT ?? '4000', 10),
   network: (process.env.NETWORK ?? 'testnet') as 'testnet' | 'mainnet',
@@ -43,7 +51,6 @@ const config = {
   },
   platformFeeBps: parseInt(process.env.PLATFORM_FEE_BPS ?? '500', 10),
   dbPath: process.env.DB_PATH ?? 'scout-off.db',
-  logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error',
   stellarHealthCheckEnabled: process.env.STELLAR_HEALTH_CHECK !== 'false',
   adminWallet: process.env.ADMIN_WALLET ?? '',
   securityHeaders: {
@@ -60,6 +67,10 @@ const config = {
     enabled: process.env.RATE_LIMIT_ENABLED === 'true',
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000', 10),
     max: parseInt(process.env.RATE_LIMIT_MAX ?? '60', 10),
+  },
+  bodyLimit: {
+    // Maximum JSON payload size (default: 1MB)
+    json: process.env.JSON_PAYLOAD_LIMIT ?? '1mb',
   },
 };
 
