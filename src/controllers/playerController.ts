@@ -10,6 +10,7 @@ import { getTierMeta } from '../utils/tier';
 import { validateMinTier } from '../utils/minTierValidator';
 import { normalizePosition } from '../utils/positionAliases';
 import { dispatchEventWebhook } from '../services/webhooks';
+import { enrichPlayerResult } from '../utils/searchEnrichment';
 
 const CID_REGEX = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/;
 
@@ -119,7 +120,11 @@ export async function filterPlayers(req: Request, res: Response, next: NextFunct
     const total = players.length;
     const pages = Math.ceil(total / pageSize);
     const paginated = players.slice((page - 1) * pageSize, page * pageSize);
-    res.json({ success: true, data: paginated, total, page, pageSize, pages });
+    const enriched = paginated.map((p) => ({
+      ...p,
+      ...enrichPlayerResult(Number(p.progress_level ?? 0)),
+    }));
+    res.json({ success: true, data: enriched, total, page, pageSize, pages });
   } catch (err) {
     next(err);
   }
