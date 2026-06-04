@@ -104,9 +104,6 @@ export async function filterPlayers(req: Request, res: Response, next: NextFunct
     const { region, position, page, pageSize } = filterSchema.parse(req.query);
     const sanitizedRegion = region ? sanitizeInput(region) : undefined;
     const sanitizedPosition = position ? sanitizeInput(position) : undefined;
-    // Normalize position synonyms/aliases (e.g. "fw" -> "forward") if available.
-    // If normalization yields undefined (unknown synonym), fallback to sanitizedPosition
-    // to preserve stable API behavior.
     const normalizedPosition = sanitizedPosition ? normalizePosition(sanitizedPosition) : undefined;
 
     let players = getEvents('player_registered').map((e) => e.payload);
@@ -145,6 +142,11 @@ export async function updatePlayer(req: Request, res: Response, next: NextFuncti
     next(err);
   }
 }
+
+const milestonesQuerySchema = z.object({
+  sortBy: z.enum(['submittedAt', 'approvedAt']).default('submittedAt'),
+  order: z.enum(['asc', 'desc']).default('asc'),
+});
 
 /** GET /api/players/:playerId/milestones */
 export async function getPlayerMilestones(req: Request, res: Response, next: NextFunction) {
