@@ -9,6 +9,7 @@ import adminRoutes from './routes/admin';
 import { errorHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { correlationId } from './middleware/correlationId';
+import { responseTime } from './middleware/responseTime';
 import { indexEvents } from './services/indexer';
 import { logger } from './utils/logger';
 import { stellarHealth } from './services/stellar';
@@ -77,6 +78,11 @@ app.use('/api/players', playerRoutes);
 app.use('/api/scouts', scoutRoutes);
 app.use('/api/validators', validatorRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Catch-all 404 handler for unmatched routes
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
 
 app.use(errorHandler);
 
