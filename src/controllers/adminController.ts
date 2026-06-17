@@ -208,8 +208,31 @@ export const withdrawFeesSchema = z.object({
     .regex(STELLAR_ADDRESS_RE_PUBLIC, 'recipient must be a valid Stellar public key'),
 });
 
+/**
+ * In-process mutex: prevents concurrent fee withdrawals.
+ * A withdrawal in-flight sets this to true; cleared after the call settles.
+ */
+let withdrawalInProgress = false;
+
+/** Exposed for tests to reset between runs. */
+export function resetWithdrawalLock(): void {
+  withdrawalInProgress = false;
+}
+
+/** Exposed for tests to simulate a lock already being held. */
+export function setWithdrawalLockForTesting(): void {
+  withdrawalInProgress = true;
+}
+
 /** POST /api/admin/fees — withdraw accumulated platform fees */
 export async function withdrawFeesController(req: Request, res: Response, next: NextFunction) {
+  // Controller-level role guard (defence-in-depth in addition to the route middleware).
+  const role = (req as any).role as string | undefined;
+  if (role !== 'admin') {
+    res.status(403).json({ success: false, error: 'Insufficient permissions' });
+    return;
+  }
+
   const adminWallet = (req as any).account as string ?? 'unknown';
   const parsed = withdrawFeesSchema.safeParse(req.body);
 
@@ -226,13 +249,33 @@ export async function withdrawFeesController(req: Request, res: Response, next: 
 
   const { recipient } = parsed.data;
 
+  // Concurrency guard: reject duplicate simultaneous withdrawals.
+  if (withdrawalInProgress) {
+    logAuditEvent({
+      action: 'fee_withdrawal_attempt',
+      adminWallet,
+      queryParams: { recipient, error: 'concurrent_withdrawal_rejected' },
+      timestamp: new Date().toISOString(),
+      contractAction: 'withdraw_fees',
+    });
+    res.status(409).json({ success: false, error: 'A withdrawal is already in progress' });
+    return;
+  }
+
+  withdrawalInProgress = true;
   try {
     const result: FeeWithdrawalResult = await stellarWithdrawFees(recipient);
 
     logAuditEvent({
       action: 'fee_withdrawal_attempt',
       adminWallet,
-      queryParams: { recipient, transactionId: result.transactionId, amount: result.amount },
+      queryParams: {
+        recipient,
+        transactionId: result.transactionId,
+        amount: result.amount,
+        token: result.token,
+        outcome: 'success',
+      },
       timestamp: new Date().toISOString(),
       contractAction: 'withdraw_fees',
     });
@@ -247,18 +290,41 @@ export async function withdrawFeesController(req: Request, res: Response, next: 
       },
     });
   } catch (err) {
+    const errorCode = err instanceof FeeWithdrawalError ? err.code : 'UNKNOWN';
+    const retryable = err instanceof FeeWithdrawalError ? err.retryable : false;
+
     logAuditEvent({
       action: 'fee_withdrawal_attempt',
       adminWallet,
-      queryParams: { recipient, error: err instanceof Error ? err.message : 'unknown_error' },
+      queryParams: {
+        recipient,
+        error: err instanceof Error ? err.message : 'unknown_error',
+        errorCode,
+        retryable,
+        outcome: 'failure',
+      },
       timestamp: new Date().toISOString(),
       contractAction: 'withdraw_fees',
     });
 
-    if (err instanceof FeeWithdrawalError && err.code === 'NO_FEES') {
-      res.status(409).json({ success: false, error: 'No fees available to withdraw' });
-      return;
+    if (err instanceof FeeWithdrawalError) {
+      switch (err.code) {
+        case 'NO_FEES':
+          res.status(409).json({ success: false, error: 'No fees available to withdraw' });
+          return;
+        case 'CONTRACT_PAUSED':
+          res.status(409).json({ success: false, error: 'Contract is paused; withdrawal not available' });
+          return;
+        case 'INVALID_RECIPIENT':
+          res.status(400).json({ success: false, error: 'Invalid recipient address' });
+          return;
+        case 'NETWORK_ERROR':
+          res.status(503).json({ success: false, error: 'Network error; please retry' });
+          return;
+      }
     }
     next(err);
+  } finally {
+    withdrawalInProgress = false;
   }
 }

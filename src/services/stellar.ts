@@ -96,13 +96,30 @@ export interface FeeWithdrawalResult {
   token: string;
 }
 
+export type FeeWithdrawalErrorCode =
+  | 'NO_FEES'
+  | 'INVALID_RECIPIENT'
+  | 'NETWORK_ERROR'
+  | 'CONTRACT_PAUSED';
+
+/** Non-retryable codes — the caller should not retry without corrective action. */
+const NON_RETRYABLE_CODES: ReadonlySet<FeeWithdrawalErrorCode> = new Set([
+  'NO_FEES',
+  'INVALID_RECIPIENT',
+  'CONTRACT_PAUSED',
+]);
+
 export class FeeWithdrawalError extends Error {
+  /** Whether the operation may succeed if retried (e.g. transient network blip). */
+  public readonly retryable: boolean;
+
   constructor(
     message: string,
-    public readonly code: 'NO_FEES' | 'INVALID_RECIPIENT' | 'NETWORK_ERROR',
+    public readonly code: FeeWithdrawalErrorCode,
   ) {
     super(message);
     this.name = 'FeeWithdrawalError';
+    this.retryable = !NON_RETRYABLE_CODES.has(code);
   }
 }
 

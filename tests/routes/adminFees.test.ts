@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import app from '../../src/app';
 import { logAuditEvent } from '../../src/services/audit';
 import * as stellar from '../../src/services/stellar';
+import { resetWithdrawalLock, setWithdrawalLockForTesting } from '../../src/controllers/adminController';
 
 const SECRET = process.env.JWT_SECRET ?? 'test-secret';
 
@@ -33,6 +34,7 @@ function makeToken(wallet: string, role: string): string {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetWithdrawalLock();
 });
 
 // ─── Authentication & authorisation ──────────────────────────────────────────
@@ -74,6 +76,21 @@ describe('POST /api/admin/fees — auth', () => {
       .set('Authorization', `Bearer ${expired}`)
       .send({ recipient: VALID_RECIPIENT });
     expect(res.status).toBe(401);
+  });
+
+  /**
+   * Controller-level auth guard: even if the route middleware were somehow
+   * bypassed, the controller independently re-checks the role.
+   */
+  it('returns 403 when req.role is not admin (controller-level guard)', async () => {
+    // Craft a player-role token — route + controller both must reject it.
+    const token = makeToken('GPLAYER1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'player');
+    const res = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
   });
 });
 
@@ -134,6 +151,14 @@ describe('POST /api/admin/fees — validation', () => {
     expect(call.adminWallet).toBe(ADMIN_WALLET);
     expect(call.queryParams.error).toBe('validation_failed');
   });
+
+  it('does not call withdrawFees when validation fails', async () => {
+    await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: 'INVALID' });
+    expect(mockWithdrawFees).not.toHaveBeenCalled();
+  });
 });
 
 // ─── No fees available (409) ──────────────────────────────────────────────────
@@ -169,6 +194,199 @@ describe('POST /api/admin/fees — no fees (409)', () => {
     expect(call.adminWallet).toBe(ADMIN_WALLET);
     expect(call.contractAction).toBe('withdraw_fees');
     expect(call.queryParams.recipient).toBe(VALID_RECIPIENT);
+    expect(call.queryParams.errorCode).toBe('NO_FEES');
+    expect(call.queryParams.retryable).toBe(false);
+    expect(call.queryParams.outcome).toBe('failure');
+  });
+});
+
+// ─── Contract paused (409 — non-retryable) ───────────────────────────────────
+
+describe('POST /api/admin/fees — CONTRACT_PAUSED (409)', () => {
+  let adminToken: string;
+
+  beforeEach(() => {
+    adminToken = makeToken(ADMIN_WALLET, 'admin');
+    mockWithdrawFees.mockRejectedValue(
+      new stellar.FeeWithdrawalError('Contract is paused', 'CONTRACT_PAUSED'),
+    );
+  });
+
+  it('returns 409 when contract is paused', async () => {
+    const res = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toMatch(/paused/i);
+  });
+
+  it('audit log marks CONTRACT_PAUSED as non-retryable', async () => {
+    await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    const call = mockLogAuditEvent.mock.calls[0][0];
+    expect(call.queryParams.errorCode).toBe('CONTRACT_PAUSED');
+    expect(call.queryParams.retryable).toBe(false);
+  });
+});
+
+// ─── Network / transient error (503 — retryable) ─────────────────────────────
+
+describe('POST /api/admin/fees — NETWORK_ERROR (503)', () => {
+  let adminToken: string;
+
+  beforeEach(() => {
+    adminToken = makeToken(ADMIN_WALLET, 'admin');
+    mockWithdrawFees.mockRejectedValue(
+      new stellar.FeeWithdrawalError('RPC timeout', 'NETWORK_ERROR'),
+    );
+  });
+
+  it('returns 503 on a network/transient error', async () => {
+    const res = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(res.status).toBe(503);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toMatch(/network error/i);
+  });
+
+  it('audit log marks NETWORK_ERROR as retryable', async () => {
+    await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    const call = mockLogAuditEvent.mock.calls[0][0];
+    expect(call.queryParams.errorCode).toBe('NETWORK_ERROR');
+    expect(call.queryParams.retryable).toBe(true);
+  });
+});
+
+// ─── Invalid recipient from service layer (400) ───────────────────────────────
+
+describe('POST /api/admin/fees — INVALID_RECIPIENT from service (400)', () => {
+  it('returns 400 when service throws INVALID_RECIPIENT', async () => {
+    const adminToken = makeToken(ADMIN_WALLET, 'admin');
+    mockWithdrawFees.mockRejectedValue(
+      new stellar.FeeWithdrawalError('Invalid recipient', 'INVALID_RECIPIENT'),
+    );
+    const res = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+});
+
+// ─── Concurrent / duplicate withdrawal (409) ─────────────────────────────────
+
+describe('POST /api/admin/fees — concurrent withdrawal (409)', () => {
+  /**
+   * Verifies the in-process concurrency lock.
+   *
+   * Because Jest runs --runInBand (single Node.js thread), two HTTP requests
+   * cannot truly be in-flight simultaneously via supertest. We instead use the
+   * exported setWithdrawalLockForTesting() helper to directly put the controller
+   * into "lock held" state, then verify that any new request is rejected with 409.
+   * resetWithdrawalLock() in beforeEach ensures the lock is clean between tests.
+   */
+  it('rejects a request when the lock is already held', async () => {
+    const adminToken = makeToken(ADMIN_WALLET, 'admin');
+
+    // Pre-set the lock to simulate a withdrawal already in progress.
+    setWithdrawalLockForTesting();
+
+    const res = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toMatch(/already in progress/i);
+  });
+
+  it('lock is not released by the rejected request — must be reset explicitly', async () => {
+    const adminToken = makeToken(ADMIN_WALLET, 'admin');
+    setWithdrawalLockForTesting();
+
+    // First request rejected (lock held).
+    const first = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(first.status).toBe(409);
+
+    // The 409 early-return path does NOT release the lock (only the real holder
+    // releases it via the finally block). Explicitly reset for next request.
+    resetWithdrawalLock();
+
+    mockWithdrawFees.mockRejectedValueOnce(
+      new stellar.FeeWithdrawalError('No fees', 'NO_FEES'),
+    );
+    const second = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    // Lock was released — this request reached the service (NO_FEES → 409).
+    expect(second.status).toBe(409);
+    expect(mockWithdrawFees).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the lock after a successful withdrawal', async () => {
+    const adminToken = makeToken(ADMIN_WALLET, 'admin');
+    const result: stellar.FeeWithdrawalResult = {
+      transactionId: 'txid-1',
+      recipient: VALID_RECIPIENT,
+      amount: '200',
+      token: 'XLM',
+    };
+    mockWithdrawFees.mockResolvedValue(result);
+
+    // First withdrawal succeeds.
+    const first = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(first.status).toBe(200);
+
+    // Second withdrawal should also succeed (lock was released).
+    mockWithdrawFees.mockResolvedValue({ ...result, transactionId: 'txid-2' });
+    const second = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(second.status).toBe(200);
+  });
+
+  it('releases the lock after a failed withdrawal', async () => {
+    const adminToken = makeToken(ADMIN_WALLET, 'admin');
+    mockWithdrawFees.mockRejectedValueOnce(
+      new stellar.FeeWithdrawalError('No fees', 'NO_FEES'),
+    );
+
+    const first = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(first.status).toBe(409);
+
+    // Lock must be released — next request should reach the service.
+    mockWithdrawFees.mockRejectedValueOnce(
+      new stellar.FeeWithdrawalError('No fees', 'NO_FEES'),
+    );
+    const second = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    expect(second.status).toBe(409);
+    // Both calls reached the service
+    expect(mockWithdrawFees).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -218,7 +436,7 @@ describe('POST /api/admin/fees — success', () => {
     expect(mockWithdrawFees).toHaveBeenCalledWith(VALID_RECIPIENT);
   });
 
-  it('logs an audit event on success', async () => {
+  it('logs a success audit event with enriched fields', async () => {
     await request(app)
       .post('/api/admin/fees')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -231,6 +449,8 @@ describe('POST /api/admin/fees — success', () => {
     expect(call.queryParams.recipient).toBe(VALID_RECIPIENT);
     expect(call.queryParams.transactionId).toBe('txid-abc123');
     expect(call.queryParams.amount).toBe('500000000');
+    expect(call.queryParams.token).toBe('XLM');
+    expect(call.queryParams.outcome).toBe('success');
   });
 
   it('audit event does not expose the JWT secret or other sensitive fields', async () => {
@@ -260,6 +480,26 @@ describe('POST /api/admin/fees — unexpected error', () => {
     const call = mockLogAuditEvent.mock.calls[0][0];
     expect(call.action).toBe('fee_withdrawal_attempt');
     expect(call.queryParams.error).toBe('RPC timeout');
+    expect(call.queryParams.outcome).toBe('failure');
+  });
+
+  it('releases the concurrency lock after an unexpected error', async () => {
+    const adminToken = makeToken(ADMIN_WALLET, 'admin');
+    mockWithdrawFees.mockRejectedValueOnce(new Error('Unexpected crash'));
+
+    await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+
+    // Lock must be freed — subsequent request should not be rejected with 409.
+    mockWithdrawFees.mockRejectedValueOnce(new Error('Unexpected crash 2'));
+    const second = await request(app)
+      .post('/api/admin/fees')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ recipient: VALID_RECIPIENT });
+    // Should be 500 (the error), NOT 409 (concurrent lock)
+    expect(second.status).toBe(500);
   });
 });
 
