@@ -206,4 +206,21 @@ describe('sep10', () => {
       expect(account).toBe(clientKeypair.publicKey());
     });
   });
+
+  it('verifyAndIssueToken throws on an expired challenge', () => {
+    const xdr = buildChallenge(clientKeypair.publicKey());
+    const tx = new Transaction(xdr, Networks.TESTNET);
+    tx.sign(clientKeypair);
+    const signedXdr = tx.toXDR();
+
+    const maxTime = Number(tx.timeBounds?.maxTime ?? 0);
+    const realNow = Date.now;
+    jest.spyOn(Date, 'now').mockImplementation(() => (maxTime + 60) * 1000);
+
+    try {
+      expect(() => verifyAndIssueToken(signedXdr)).toThrow('Challenge has expired');
+    } finally {
+      Date.now = realNow;
+    }
+  });
 });
