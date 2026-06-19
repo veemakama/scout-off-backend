@@ -1,4 +1,4 @@
-import { SorobanRpc, TransactionBuilder, Networks, BASE_FEE } from '@stellar/stellar-sdk';
+import { SorobanRpc, Networks } from '@stellar/stellar-sdk';
 import config from '../config';
 
 const server = new SorobanRpc.Server(config.sorobanRpcUrl);

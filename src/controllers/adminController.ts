@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import { getEvents } from '../db';
-import { AdminEvent, FeeHistoryItem, ApiResponse, EventRecord } from '../types';
+import { ApiResponse, EventRecord } from '../types';
 import { logAuditEvent } from '../services/audit';
 import { withdrawFees as stellarWithdrawFees, FeeWithdrawalError, FeeWithdrawalResult } from '../services/stellar';
 import config from '../config';
@@ -62,8 +62,11 @@ export async function getAllEvents(req: Request, res: Response, next: NextFuncti
     const { startDate, endDate, eventType } = dateResult.data;
     const { limit, offset } = pageResult.data;
     let events = getEvents() as unknown as EventRecord[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (eventType) events = events.filter((e: any) => e.type === eventType);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (startDate) events = events.filter((e: any) => new Date(e.timestamp ?? e.created_at ?? 0) >= startDate!);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (endDate) events = events.filter((e: any) => new Date(e.timestamp ?? e.created_at ?? 0) <= endDate!);
     const total = events.length;
     const data = events.slice(offset, offset + limit);
@@ -81,7 +84,7 @@ export async function getFeeSummary(req: Request, res: Response, next: NextFunct
       res.status(400).json({ success: false, error: dateResult.error.errors[0]?.message ?? 'Invalid query parameters' });
       return;
     }
-    const adminWallet = (req as any).account as string ?? 'unknown';
+    const adminWallet = req.account ?? 'unknown';
     logAuditEvent({
       action: 'fee_history_query',
       adminWallet,
@@ -99,7 +102,7 @@ export async function getFeeSummary(req: Request, res: Response, next: NextFunct
 /** POST /api/admin/validators/register */
 export async function registerValidator(req: Request, res: Response, next: NextFunction) {
   try {
-    const adminWallet = (req as any).account as string;
+    const adminWallet = req.account ?? 'unknown';
     const { validatorWallet } = req.body as { validatorWallet?: string };
 
     if (!validatorWallet || !STELLAR_ADDRESS_RE.test(validatorWallet)) {
@@ -119,7 +122,7 @@ export async function registerValidator(req: Request, res: Response, next: NextF
 /** POST /api/admin/validators/revoke */
 export async function revokeValidator(req: Request, res: Response, next: NextFunction) {
   try {
-    const adminWallet = (req as any).account as string;
+    const adminWallet = req.account ?? 'unknown';
     const { validatorWallet } = req.body as { validatorWallet?: string };
 
     if (!validatorWallet || !STELLAR_ADDRESS_RE.test(validatorWallet)) {
@@ -142,7 +145,7 @@ export async function revokeValidator(req: Request, res: Response, next: NextFun
  */
 export async function pauseContract(req: Request, res: Response, next: NextFunction) {
   try {
-    const adminWallet = (req as any).account as string;
+    const adminWallet = req.account ?? 'unknown';
     logAuditEvent({
       action: 'contract_state_change',
       adminWallet,
@@ -167,7 +170,7 @@ export async function pauseContract(req: Request, res: Response, next: NextFunct
  */
 export async function unpauseContract(req: Request, res: Response, next: NextFunction) {
   try {
-    const adminWallet = (req as any).account as string;
+    const adminWallet = req.account ?? 'unknown';
     logAuditEvent({
       action: 'contract_state_change',
       adminWallet,
@@ -249,13 +252,12 @@ export function setWithdrawalLockForTesting(): void {
 /** POST /api/admin/fees — withdraw accumulated platform fees */
 export async function withdrawFeesController(req: Request, res: Response, next: NextFunction) {
   // Controller-level role guard (defence-in-depth in addition to the route middleware).
-  const role = (req as any).role as string | undefined;
-  if (role !== 'admin') {
+  if (req.role !== 'admin') {
     res.status(403).json({ success: false, error: 'Insufficient permissions' });
     return;
   }
 
-  const adminWallet = (req as any).account as string ?? 'unknown';
+  const adminWallet = req.account ?? 'unknown';
   const parsed = withdrawFeesSchema.safeParse(req.body);
 
   if (!parsed.success) {

@@ -3,17 +3,23 @@ import { ZodError } from 'zod';
 import { ApiResponse } from '../types';
 import { logger } from '../utils/logger';
 
+interface HttpError extends Error {
+  type?: string;
+}
+
 export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
   _next: NextFunction
 ): void {
-  const correlationId: string | undefined = (req as any).correlationId;
+  const correlationId = req.correlationId;
 
   logger.error(`[error] ${err.message}${correlationId ? ` correlationId=${correlationId}` : ''}`);
 
-  if ((err as any).type === 'entity.parse.failed') {
+  const httpErr = err as HttpError;
+
+  if (httpErr.type === 'entity.parse.failed') {
     res.status(400).json({
       success: false,
       error: 'Malformed JSON payload',
@@ -22,7 +28,7 @@ export function errorHandler(
     return;
   }
 
-  if ((err as any).type === 'entity.too.large') {
+  if (httpErr.type === 'entity.too.large') {
     res.status(413).json({
       success: false,
       error: 'Payload too large',

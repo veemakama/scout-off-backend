@@ -50,11 +50,16 @@ export function setLastLedger(ledger: number): void {
 
 // ─── Query helpers ────────────────────────────────────────────────────────────
 
+interface EventRow {
+  type: string;
+  payload: string;
+}
+
 export function getEvents(type?: ContractEventType): EventRecord[] {
   const db = getDb();
   const rows = type
-    ? (db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC').all(type) as any[])
-    : (db.prepare('SELECT * FROM events ORDER BY ledger ASC').all() as any[]);
+    ? (db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC').all(type) as EventRow[])
+    : (db.prepare('SELECT * FROM events ORDER BY ledger ASC').all() as EventRow[]);
 
   return rows.map((r) => ({
     source: config.contractId,

@@ -1,7 +1,6 @@
-import { buildChallenge, verifyAndIssueToken, getServerKeypair } from '../../src/services/sep10';
+import { buildChallenge, verifyAndIssueToken } from '../../src/services/sep10';
 import crypto from 'crypto';
 import { Keypair, Transaction, Networks, TransactionBuilder, BASE_FEE, Operation, Account, Asset } from '@stellar/stellar-sdk';
-import config from '../../src/config';
 
 const clientKeypair = Keypair.random();
 

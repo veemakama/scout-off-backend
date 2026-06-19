@@ -2,12 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { sanitizeInput } from '../utils/sanitizer';
 import { z } from 'zod';
 import { CID_REGEX } from '../utils/cidValidator';
-import { pinJson, gatewayUrl } from '../services/ipfs';
+import { pinJson } from '../services/ipfs';
 import { serializeIpfsResult } from '../utils/ipfsSerializer';
 import { getEvents } from '../db';
 import { queryMilestones } from '../services/stellar';
 import { invalidatePlayerCache } from '../services/cache';
-import { ApiResponse, ProgressLevel } from '../types';
+import { ApiResponse } from '../types';
 import { getTierMeta } from '../utils/tier';
 import { validateMinTier } from '../utils/minTierValidator';
 import { normalizePosition } from '../utils/positionAliases';
@@ -171,7 +171,7 @@ export async function getPlayerMilestones(req: Request, res: Response, next: Nex
       .filter((e) => e.payload.player_id === playerId)
       .map((e) => ({ ...e.payload }));
     const onChainMilestones = await queryMilestones(playerId);
-    const combined: any[] = [...indexedMilestones, ...onChainMilestones];
+    const combined = [...indexedMilestones, ...(onChainMilestones as unknown as Record<string, unknown>[])];
     combined.sort((a, b) => {
       const av = Number(a[sortBy] ?? 0);
       const bv = Number(b[sortBy] ?? 0);

@@ -6,7 +6,6 @@ import { getEvents } from '../db';
 import { invalidateMilestoneCache } from '../services/cache';
 import { recordAudit } from '../utils/audit';
 import { PlayerMilestone } from '../types';
-import { CID_REGEX } from '../utils/cidValidator';
 
 /**
  * Validates that an evidence URI is secure and properly formatted.
@@ -41,7 +40,7 @@ export async function submitMilestoneEvidence(req: Request, res: Response, next:
     // Invalidate milestone + player cache so updated progress tier is reflected
     invalidateMilestoneCache(playerId);
 
-    const validatorWallet = (req as any).account ?? 'unknown';
+    const validatorWallet = req.account ?? 'unknown';
     const correlationId = getCorrelationId(req);
     logger.info(
       `[validator] action=submit_milestone validator=${validatorWallet} playerId=${playerId} milestoneType=${milestoneType} evidenceCid=${evidenceCid} correlationId=${correlationId}`
@@ -73,7 +72,7 @@ export async function getPendingMilestones(req: Request, res: Response, next: Ne
       evidenceUri: m.evidence_uri as string || m.evidenceUri as string || '',
     }));
 
-    const validatorWallet = (req as any).account ?? 'unknown';
+    const validatorWallet = req.account ?? 'unknown';
     recordAudit(validatorWallet, 'milestone_approved', { region: region ?? null, playerId: playerId ?? null, pendingCount: milestones.length }, 'pending milestones viewed');
 
     res.json({ success: true, data: milestones });

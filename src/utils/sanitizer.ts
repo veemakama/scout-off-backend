@@ -7,7 +7,7 @@ export function sanitizeInput(input: string): string {
   if (typeof input !== 'string') return input;
   // Trim surrounding whitespace
   let sanitized = input.trim();
-  // Remove null bytes and control chars
+  // eslint-disable-next-line no-control-regex
   sanitized = sanitized.replace(/[\x00-\x1F\x7F]/g, '');
   return sanitized;
 }
