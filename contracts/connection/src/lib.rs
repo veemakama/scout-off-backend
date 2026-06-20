@@ -1,12 +1,12 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, vec, Address, Env, IntoVal, String, Symbol, Vec,
+};
 use scout_off_shared::{
     errors::Error,
     storage::{bump_instance, is_initialized, set_initialized},
 };
-use register::RegisterContractClient;
-use subscription::SubscriptionContractClient;
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -96,13 +96,25 @@ impl ConnectionContract {
         }
 
         // Authorization: active subscription OR paid contact fee for this player.
+        // Cross-contract calls use env.invoke_contract to avoid pulling the
+        // register/subscription rlibs into the connection WASM (duplicate symbols).
         let sub_addr: Address = env
             .storage()
             .instance()
             .get(&DataKey::SubscriptionContract)
             .ok_or(Error::NotInitialized)?;
-        let sub = SubscriptionContractClient::new(&env, &sub_addr);
-        if !sub.is_subscribed(&scout) && !sub.has_paid_contact(&scout, &player_id) {
+
+        let is_sub: bool = env.invoke_contract(
+            &sub_addr,
+            &Symbol::new(&env, "is_subscribed"),
+            vec![&env, scout.clone().into_val(&env)],
+        );
+        let has_paid: bool = env.invoke_contract(
+            &sub_addr,
+            &Symbol::new(&env, "has_paid_contact"),
+            vec![&env, scout.clone().into_val(&env), player_id.into_val(&env)],
+        );
+        if !is_sub && !has_paid {
             return Err(Error::Unauthorized);
         }
 
@@ -141,7 +153,11 @@ impl ConnectionContract {
             .instance()
             .get(&DataKey::RegisterContract)
             .ok_or(Error::NotInitialized)?;
-        RegisterContractClient::new(&env, &reg_addr).update_progress_level(&player_id, &3u32);
+        env.invoke_contract::<()>(
+            &reg_addr,
+            &Symbol::new(&env, "update_progress_level"),
+            vec![&env, player_id.into_val(&env), 3u32.into_val(&env)],
+        );
 
         // Emit trial_offer_logged event.
         env.events().publish(
