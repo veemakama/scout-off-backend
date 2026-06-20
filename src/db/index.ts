@@ -67,11 +67,26 @@ interface EventRow {
   payload: string;
 }
 
-export function getEvents(type?: ContractEventType): EventRecord[] {
+export interface GetEventsOptions {
+  limit?: number;
+  offset?: number;
+}
+
+export function getEvents(type?: ContractEventType, opts?: GetEventsOptions): EventRecord[] {
   const db = getDb();
-  const rows = type
-    ? (db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC').all(type) as EventRow[])
-    : (db.prepare('SELECT * FROM events ORDER BY ledger ASC').all() as EventRow[]);
+  const { limit, offset } = opts ?? {};
+  const hasPagination = limit !== undefined && offset !== undefined;
+
+  let rows: EventRow[];
+  if (type && hasPagination) {
+    rows = db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC LIMIT ? OFFSET ?').all(type, limit, offset) as EventRow[];
+  } else if (type) {
+    rows = db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC').all(type) as EventRow[];
+  } else if (hasPagination) {
+    rows = db.prepare('SELECT * FROM events ORDER BY ledger ASC LIMIT ? OFFSET ?').all(limit, offset) as EventRow[];
+  } else {
+    rows = db.prepare('SELECT * FROM events ORDER BY ledger ASC').all() as EventRow[];
+  }
 
   return rows.map((r) => ({
     source: config.contractId,
@@ -79,6 +94,14 @@ export function getEvents(type?: ContractEventType): EventRecord[] {
     payload: JSON.parse(r.payload),
     contractAddress: config.contractId,
   }));
+}
+
+export function getEventsCount(type?: ContractEventType): number {
+  const db = getDb();
+  const row = type
+    ? db.prepare('SELECT COUNT(*) AS count FROM events WHERE type = ?').get(type) as { count: number } | undefined
+    : db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number } | undefined;
+  return row?.count ?? 0;
 }
 
 // ─── Player table helpers ─────────────────────────────────────────────────────

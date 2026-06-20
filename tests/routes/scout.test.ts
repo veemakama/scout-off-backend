@@ -79,7 +79,7 @@ describe('GET /api/scouts/:wallet/subscription', () => {
         source: 'contract',
         type: 'scout_subscribed',
         contractAddress: 'contract',
-        payload: { scout: WALLET, subscriptionExpiry: expiresAt, tier: 'pro' },
+        payload: { scout: WALLET, subscription_expiry: expiresAt, tier: 'pro' },
       },
     ]);
     const token = makeToken(WALLET);
@@ -101,7 +101,7 @@ describe('GET /api/scouts/:wallet/subscription', () => {
         source: 'contract',
         type: 'scout_subscribed',
         contractAddress: 'contract',
-        payload: { scout: WALLET, subscriptionExpiry: expiresAt },
+        payload: { scout: WALLET, subscription_expiry: expiresAt },
       },
     ]);
     const token = makeToken(WALLET);
@@ -120,7 +120,7 @@ describe('GET /api/scouts/:wallet/subscription', () => {
         source: 'contract',
         type: 'scout_subscribed',
         contractAddress: 'contract',
-        payload: { scout: WALLET, subscriptionExpiry: expiresAt },
+        payload: { scout: WALLET, subscription_expiry: expiresAt },
       },
     ]);
     const token = makeToken(WALLET);
@@ -167,13 +167,13 @@ describe('GET /api/scouts/:wallet/contacts', () => {
         source: 'contract',
         type: 'contact_unlocked',
         contractAddress: 'contract',
-        payload: { scout: WALLET, playerId: 'player-42', unlockedAt },
+        payload: { scout: WALLET, player_id: 'player-42', unlocked_at: unlockedAt },
       },
       {
         source: 'contract',
         type: 'contact_unlocked',
         contractAddress: 'contract',
-        payload: { scout: WALLET, playerId: 'player-99', unlockedAt: unlockedAt + 100 },
+        payload: { scout: WALLET, player_id: 'player-99', unlocked_at: unlockedAt + 100 },
       },
     ]);
     const token = makeToken(WALLET);

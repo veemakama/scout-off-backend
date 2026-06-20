@@ -5,7 +5,7 @@ import { CID_REGEX } from '../utils/cidValidator';
 import { pinJson } from '../services/ipfs';
 import { serializeIpfsResult } from '../utils/ipfsSerializer';
 import { getEvents, getPlayerById, queryPlayers } from '../db';
-import { queryMilestones } from '../services/stellar';
+import { queryMilestones, updateProfile } from '../services/stellar';
 import { invalidatePlayerCache } from '../services/cache';
 import { ApiResponse } from '../types';
 import { getTierMeta } from '../utils/tier';
@@ -145,21 +145,21 @@ export async function filterPlayers(req: Request, res: Response, next: NextFunct
   }
 }
 
-/**
- * PUT /api/players/:playerId
- * Required permissions: caller must be the profile owner (JWT sub === playerId).
- * Stub — returns 202 Accepted until on-chain update is wired.
- */
-export const updatePlayerSchema = z.object({
-  position: z.string().min(1).optional(),
-  region: z.string().min(1).optional(),
-  metadata: z.record(z.unknown()).optional(),
-});
+/** PUT /api/players/:playerId — profile owner only */
+export const updatePlayerSchema = z.union([
+  z.object({ metadata: z.record(z.unknown()) }),
+  z.object({ metadataUri: metadataUriSchema }),
+]);
 
 export async function updatePlayer(req: Request, res: Response, next: NextFunction) {
   try {
-    updatePlayerSchema.parse(req.body);
-    res.status(202).json({ success: true, message: 'Profile update accepted' });
+    const playerId = sanitizeInput(req.params.playerId);
+    const parsed = updatePlayerSchema.parse(req.body);
+    const metadataUri = 'metadata' in parsed
+      ? await pinJson({ playerId, ...parsed.metadata })
+      : parsed.metadataUri;
+    const result = await updateProfile(playerId, metadataUri);
+    res.status(200).json({ success: true, data: { transactionId: result.transactionId, metadataUri } });
   } catch (err) {
     next(err);
   }

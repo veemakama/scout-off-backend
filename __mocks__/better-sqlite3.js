@@ -53,16 +53,31 @@ class Statement {
     if (sql.includes('FROM PLAYERS') && sql.includes('WHERE PLAYER_ID = ?')) {
       return this._db._players.find((p) => p.player_id === args[0]) ?? undefined;
     }
+    if (sql.includes('COUNT(*)') && sql.includes('FROM EVENTS')) {
+      const rows = sql.includes('WHERE TYPE = ?')
+        ? this._db._events.filter((e) => e.type === args[0])
+        : this._db._events;
+      return { count: rows.length };
+    }
     return undefined;
   }
 
   all(...args) {
     const sql = this._sql.toUpperCase();
     if (sql.includes('FROM EVENTS')) {
+      let rows;
+      let argIdx = 0;
       if (sql.includes('WHERE TYPE = ?')) {
-        return this._db._events.filter((e) => e.type === args[0]);
+        rows = this._db._events.filter((e) => e.type === args[argIdx++]);
+      } else {
+        rows = [...this._db._events];
       }
-      return [...this._db._events];
+      if (sql.includes('LIMIT ?')) {
+        const limit = args[argIdx++];
+        const offset = args[argIdx++] ?? 0;
+        rows = rows.slice(offset, offset + limit);
+      }
+      return rows;
     }
     if (sql.includes('FROM PLAYERS')) {
       let rows = [...this._db._players];

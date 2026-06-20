@@ -142,7 +142,7 @@ describe('GET /api/validators/milestones/pending', () => {
           {
             payload: {
               milestone_id: 'm1',
-              playerId: 'player-1',
+              player_id: 'player-1',
               region: 'EU',
               validator: VALIDATOR_WALLET,
               created_at: submittedAt,
@@ -178,7 +178,7 @@ describe('GET /api/validators/milestones/pending', () => {
           {
             payload: {
               milestone_id: 'm1',
-              playerId: 'player-1',
+              player_id: 'player-1',
               region: 'EU',
               created_at: submittedAt,
               evidence_uri: 'QmEvidence1',
@@ -187,7 +187,7 @@ describe('GET /api/validators/milestones/pending', () => {
           {
             payload: {
               milestone_id: 'm2',
-              playerId: 'player-2',
+              player_id: 'player-2',
               region: 'NA',
               created_at: submittedAt,
               evidence_uri: 'QmEvidence2',
@@ -219,7 +219,7 @@ describe('GET /api/validators/milestones/pending', () => {
           {
             payload: {
               milestone_id: 'm1',
-              playerId: 'player-1',
+              player_id: 'player-1',
               region: 'EU',
               created_at: submittedAt,
               evidence_uri: 'QmEvidence1',
@@ -228,7 +228,7 @@ describe('GET /api/validators/milestones/pending', () => {
           {
             payload: {
               milestone_id: 'm2',
-              playerId: 'player-2',
+              player_id: 'player-2',
               region: 'EU',
               created_at: submittedAt,
               evidence_uri: 'QmEvidence2',

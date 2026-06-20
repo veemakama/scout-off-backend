@@ -1,10 +1,31 @@
 import { getEvents, upsertPlayer, updatePlayerProgress, getPlayerById, queryPlayers } from '../../src/db';
-import { normalizeEventId } from '../../src/services/indexer';
+import { normalizeEventId, normalizePayload } from '../../src/services/indexer';
 
 describe('indexer', () => {
   it('returns empty array when no events exist for a type', () => {
     const events = getEvents('player_registered');
     expect(Array.isArray(events)).toBe(true);
+  });
+
+  describe('normalizePayload', () => {
+    it('converts camelCase keys to snake_case', () => {
+      const result = normalizePayload({ playerId: 'p1', evidenceUri: 'ipfs://x', unlockedAt: 100 });
+      expect(result).toEqual({ player_id: 'p1', evidence_uri: 'ipfs://x', unlocked_at: 100 });
+    });
+
+    it('leaves snake_case keys unchanged', () => {
+      const result = normalizePayload({ player_id: 'p1', evidence_uri: 'ipfs://x' });
+      expect(result).toEqual({ player_id: 'p1', evidence_uri: 'ipfs://x' });
+    });
+
+    it('handles mixed payloads, normalising only camelCase keys', () => {
+      const result = normalizePayload({ playerId: 'p1', region: 'EU', metadataUri: 'QmAbc', txHash: 'abc' });
+      expect(result).toEqual({ player_id: 'p1', region: 'EU', metadata_uri: 'QmAbc', tx_hash: 'abc' });
+    });
+
+    it('returns empty object for empty input', () => {
+      expect(normalizePayload({})).toEqual({});
+    });
   });
 
   describe('normalizeEventId', () => {

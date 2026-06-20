@@ -28,6 +28,11 @@ jest.mock('../../src/services/cache', () => ({
   invalidatePlayerCache: jest.fn(),
 }));
 
+jest.mock('../../src/services/stellar', () => ({
+  updateProfile: jest.fn().mockResolvedValue({ transactionId: 'stub-tx-abc123', metadataUri: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG' }),
+  queryMilestones: jest.fn().mockResolvedValue([]),
+}));
+
 function makeToken(wallet: string, role: string): string {
   return jwt.sign({ sub: wallet, role }, SECRET, { expiresIn: '1h' });
 }
@@ -114,13 +119,37 @@ describe('PUT /api/players/:playerId — role enforcement', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('returns 202 when player JWT matches playerId', async () => {
+  it('returns 200 with transactionId when metadataUri is provided', async () => {
+    const token = makeToken(PLAYER_WALLET, 'player');
+    const res = await request(app)
+      .put(`/api/players/${PLAYER_WALLET}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ metadataUri: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.transactionId).toBe('stub-tx-abc123');
+    expect(res.body.data.metadataUri).toBe('QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG');
+  });
+
+  it('pins metadata to IPFS and calls updateProfile when metadata object is provided', async () => {
+    const token = makeToken(PLAYER_WALLET, 'player');
+    const res = await request(app)
+      .put(`/api/players/${PLAYER_WALLET}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ metadata: { position: 'midfielder', region: 'EU' } });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.transactionId).toBeDefined();
+    expect(res.body.data.metadataUri).toBeDefined();
+  });
+
+  it('returns 400 when neither metadata nor metadataUri is provided', async () => {
     const token = makeToken(PLAYER_WALLET, 'player');
     const res = await request(app)
       .put(`/api/players/${PLAYER_WALLET}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ position: 'midfielder' });
-    expect(res.status).toBe(202);
-    expect(res.body.success).toBe(true);
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
   });
 });
