@@ -31,6 +31,7 @@ pub enum DataKey {
     Player(u64),
     Wallet(Address),
     PlayerList,
+    AuthorizedUpdater,
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +167,50 @@ impl RegisterContract {
             .instance()
             .get(&DataKey::Player(player_id))
             .ok_or(Error::PlayerNotFound)
+    }
+
+    /// Authorize an external contract (e.g. connection) to update player progress levels.
+    /// Admin-only.
+    pub fn set_authorized_updater(env: Env, updater: Address) -> Result<(), Error> {
+        if !is_initialized(&env) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::AuthorizedUpdater, &updater);
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Set a player's progress level. Only the authorized updater contract may call this.
+    pub fn update_progress_level(env: Env, player_id: u64, level: u32) -> Result<(), Error> {
+        if !is_initialized(&env) {
+            return Err(Error::NotInitialized);
+        }
+        let updater: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::AuthorizedUpdater)
+            .ok_or(Error::Unauthorized)?;
+        updater.require_auth();
+
+        let mut player: PlayerData = env
+            .storage()
+            .instance()
+            .get(&DataKey::Player(player_id))
+            .ok_or(Error::PlayerNotFound)?;
+        player.progress_level = level;
+        env.storage()
+            .instance()
+            .set(&DataKey::Player(player_id), &player);
+        bump_instance(&env);
+        Ok(())
     }
 
     /// Return all players matching region, position, and minimum progress tier.

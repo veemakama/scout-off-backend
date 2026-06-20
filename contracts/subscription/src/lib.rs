@@ -6,6 +6,16 @@ use scout_off_shared::{
     storage::{bump_instance, is_initialized, set_initialized},
 };
 
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Admin,
+    Token,
+    PlatformFeeBps,
+    Subscription(Address),
+    ContactFee(Address, u64),
+}
+
 #[contract]
 pub struct SubscriptionContract;
 
@@ -43,40 +53,45 @@ impl SubscriptionContract {
             return Err(Error::NotInitialized);
         }
         scout.require_auth();
+        let expiry = env.ledger().sequence() + duration_ledgers;
+        env.storage()
+            .instance()
+            .set(&DataKey::Subscription(scout.clone()), &expiry);
         bump_instance(&env);
-        // TODO: implement subscription payment logic (issue #200)
-        let _ = (tier, duration_ledgers);
+        let _ = tier;
         Ok(())
     }
 
     /// Unlock direct contact with a player by paying the micro-fee.
-    pub fn pay_to_contact(
-        env: Env,
-        scout: Address,
-        player_id: Address,
-    ) -> Result<(), Error> {
+    pub fn pay_to_contact(env: Env, scout: Address, player_id: u64) -> Result<(), Error> {
         if !is_initialized(&env) {
             return Err(Error::NotInitialized);
         }
         scout.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::ContactFee(scout.clone(), player_id), &true);
         bump_instance(&env);
-        // TODO: implement pay-to-contact logic (issue #200)
-        let _ = player_id;
         Ok(())
     }
 
     /// Check whether a scout has an active subscription.
     pub fn is_subscribed(env: Env, scout: Address) -> bool {
-        // TODO: implement subscription lookup (issue #200)
-        let _ = scout;
-        false
+        let expiry: u32 = match env
+            .storage()
+            .instance()
+            .get(&DataKey::Subscription(scout))
+        {
+            Some(e) => e,
+            None => return false,
+        };
+        env.ledger().sequence() < expiry
     }
-}
 
-#[contracttype]
-#[derive(Clone)]
-pub enum DataKey {
-    Admin,
-    Token,
-    PlatformFeeBps,
+    /// Check whether a scout has paid the contact fee for a specific player.
+    pub fn has_paid_contact(env: Env, scout: Address, player_id: u64) -> bool {
+        env.storage()
+            .instance()
+            .has(&DataKey::ContactFee(scout, player_id))
+    }
 }
