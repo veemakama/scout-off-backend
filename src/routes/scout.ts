@@ -1,8 +1,13 @@
-import { Router } from 'express';
-import { getSubscription, getUnlockedContacts, unlockContact, getPaymentHistory, subscribe } from '../controllers/scoutController';
-import { requireAuth, requireRole } from '../middleware/auth';
-import { getSubscription, getUnlockedContacts, unlockContact, getPaymentHistory } from '../controllers/scoutController';
-import { requireRole } from '../middleware/auth';
+import { Router } from "express";
+import {
+  getSubscription,
+  getUnlockedContacts,
+  unlockContact,
+  getPaymentHistory,
+  subscribe,
+} from "../controllers/scoutController";
+import { requireRole } from "../middleware/auth";
+import { getScoutRecommendations } from "../controllers/scoutRecommendationsController";
 
 const router = Router();
 
@@ -16,7 +21,7 @@ const router = Router();
  * @response 401 { success: false, error: string } - Missing or invalid token
  * @auth Bearer (any authenticated user)
  */
-router.get('/:wallet/subscription', requireRole('scout'), getSubscription);
+router.get("/:wallet/subscription", requireRole("scout"), getSubscription);
 
 /**
  * POST /api/scouts/:wallet/subscribe
@@ -32,7 +37,7 @@ router.get('/:wallet/subscription', requireRole('scout'), getSubscription);
  * @response 403 { success: false, error: string } - Scout role required
  * @auth Bearer (scout role required)
  */
-router.post('/:wallet/subscribe', requireRole('scout'), subscribe);
+router.post("/:wallet/subscribe", requireRole("scout"), subscribe);
 
 /**
  * GET /api/scouts/:wallet/contacts
@@ -44,7 +49,7 @@ router.post('/:wallet/subscribe', requireRole('scout'), subscribe);
  * @response 401 { success: false, error: string } - Missing or invalid token
  * @auth Bearer (any authenticated user)
  */
-router.get('/:wallet/contacts', requireRole('scout'), getUnlockedContacts);
+router.get("/:wallet/contacts", requireRole("scout"), getUnlockedContacts);
 
 /**
  * POST /api/scouts/:wallet/contacts/:playerId/unlock
@@ -58,8 +63,12 @@ router.get('/:wallet/contacts', requireRole('scout'), getUnlockedContacts);
  * @response 401 { success: false, error: string } - Missing or invalid token
  * @auth Bearer (any authenticated user)
  */
-router.post('/:wallet/contacts/:playerId/unlock', requireRole('scout'), unlockContact);
-router.get('/:wallet/payments', requireRole('scout'), getPaymentHistory);
+router.post(
+  "/:wallet/contacts/:playerId/unlock",
+  requireRole("scout"),
+  unlockContact,
+);
+router.get("/:wallet/payments", requireRole("scout"), getPaymentHistory);
 
 /**
  * POST /api/scouts/:wallet/trial-offer
@@ -79,6 +88,20 @@ router.get('/:wallet/payments', requireRole('scout'), getPaymentHistory);
  * @response 404 { success: false, error: string } - Player not found
  * @auth Bearer (scout role)
  */
-router.post('/:wallet/trial-offer', requireRole('scout'), validateBody(trialOfferSchema), submitTrialOffer);
+router.post(
+  "/:wallet/trial-offer",
+  requireRole("scout"),
+  validateBody(trialOfferSchema),
+  submitTrialOffer,
+);
+
+/**
+ * GET /api/scouts/:wallet/recommendations
+ */
+router.get(
+  "/:wallet/recommendations",
+  requireRole("scout"),
+  getScoutRecommendations,
+);
 
 export default router;

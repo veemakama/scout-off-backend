@@ -1,7 +1,7 @@
-import Database from 'better-sqlite3';
-import config from '../config';
-import { EventRecord, ContractEventType } from '../types';
-import { runMigrations } from './migrate';
+import Database from "better-sqlite3";
+import config from "../config";
+import { EventRecord, ContractEventType } from "../types";
+import { runMigrations } from "./migrate";
 
 // ─── Connection & schema ──────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ export function initDb(): void {
 }
 
 export function getDb(): Database.Database {
-  if (!_db) throw new Error('Database not initialised — call initDb() first');
+  if (!_db) throw new Error("Database not initialised — call initDb() first");
   return _db;
 }
 
@@ -50,15 +50,17 @@ export function getDb(): Database.Database {
 
 export function getLastLedger(): number {
   const row = getDb()
-    .prepare('SELECT value FROM indexer_state WHERE key = ?')
-    .get('last_ledger') as { value: string } | undefined;
+    .prepare("SELECT value FROM indexer_state WHERE key = ?")
+    .get("last_ledger") as { value: string } | undefined;
   return row ? parseInt(row.value, 10) : 0;
 }
 
 export function setLastLedger(ledger: number): void {
-  getDb().prepare(
-    'INSERT INTO indexer_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-  ).run('last_ledger', String(ledger));
+  getDb()
+    .prepare(
+      "INSERT INTO indexer_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .run("last_ledger", String(ledger));
 }
 
 // ─── Query helpers ────────────────────────────────────────────────────────────
@@ -73,20 +75,33 @@ export interface GetEventsOptions {
   offset?: number;
 }
 
-export function getEvents(type?: ContractEventType, opts?: GetEventsOptions): EventRecord[] {
+export function getEvents(
+  type?: ContractEventType,
+  opts?: GetEventsOptions,
+): EventRecord[] {
   const db = getDb();
   const { limit, offset } = opts ?? {};
   const hasPagination = limit !== undefined && offset !== undefined;
 
   let rows: EventRow[];
   if (type && hasPagination) {
-    rows = db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC LIMIT ? OFFSET ?').all(type, limit, offset) as EventRow[];
+    rows = db
+      .prepare(
+        "SELECT * FROM events WHERE type = ? ORDER BY ledger ASC LIMIT ? OFFSET ?",
+      )
+      .all(type, limit, offset) as EventRow[];
   } else if (type) {
-    rows = db.prepare('SELECT * FROM events WHERE type = ? ORDER BY ledger ASC').all(type) as EventRow[];
+    rows = db
+      .prepare("SELECT * FROM events WHERE type = ? ORDER BY ledger ASC")
+      .all(type) as EventRow[];
   } else if (hasPagination) {
-    rows = db.prepare('SELECT * FROM events ORDER BY ledger ASC LIMIT ? OFFSET ?').all(limit, offset) as EventRow[];
+    rows = db
+      .prepare("SELECT * FROM events ORDER BY ledger ASC LIMIT ? OFFSET ?")
+      .all(limit, offset) as EventRow[];
   } else {
-    rows = db.prepare('SELECT * FROM events ORDER BY ledger ASC').all() as EventRow[];
+    rows = db
+      .prepare("SELECT * FROM events ORDER BY ledger ASC")
+      .all() as EventRow[];
   }
 
   return rows.map((r) => ({
@@ -100,8 +115,12 @@ export function getEvents(type?: ContractEventType, opts?: GetEventsOptions): Ev
 export function getEventsCount(type?: ContractEventType): number {
   const db = getDb();
   const row = type
-    ? db.prepare('SELECT COUNT(*) AS count FROM events WHERE type = ?').get(type) as { count: number } | undefined
-    : db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number } | undefined;
+    ? (db
+        .prepare("SELECT COUNT(*) AS count FROM events WHERE type = ?")
+        .get(type) as { count: number } | undefined)
+    : (db.prepare("SELECT COUNT(*) AS count FROM events").get() as
+        | { count: number }
+        | undefined);
   return row?.count ?? 0;
 }
 
@@ -123,6 +142,39 @@ export interface QueryPlayersOptions {
   minTier?: number;
 }
 
+export interface PlayerProfileHistoryRow {
+  metadata_uri: string;
+  changed_at: number;
+  tx_hash: string;
+}
+
+export function insertPlayerProfileHistory(p: {
+  player_id: string;
+  metadata_uri: string;
+  changed_at: number;
+  tx_hash: string;
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO player_profile_history (player_id, metadata_uri, changed_at, tx_hash)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(p.player_id, p.metadata_uri, p.changed_at, p.tx_hash);
+}
+
+export function getPlayerProfileHistory(
+  playerId: string,
+): PlayerProfileHistoryRow[] {
+  return getDb()
+    .prepare(
+      `SELECT metadata_uri, changed_at, tx_hash
+       FROM player_profile_history
+       WHERE player_id = ?
+       ORDER BY changed_at DESC`,
+    )
+    .all(playerId) as PlayerProfileHistoryRow[];
+}
+
 export function upsertPlayer(p: {
   player_id: string;
   wallet: string;
@@ -139,23 +191,30 @@ export function upsertPlayer(p: {
          wallet       = excluded.wallet,
          position     = excluded.position,
          region       = excluded.region,
-         metadata_uri = excluded.metadata_uri`
+         metadata_uri = excluded.metadata_uri`,
     )
-    .run(p.player_id, p.wallet, p.position ?? null, p.region ?? null, p.metadata_uri ?? null, p.created_at ?? null);
+    .run(
+      p.player_id,
+      p.wallet,
+      p.position ?? null,
+      p.region ?? null,
+      p.metadata_uri ?? null,
+      p.created_at ?? null,
+    );
 }
 
 export function updatePlayerProgress(playerId: string, level: number): void {
   getDb()
-    .prepare('UPDATE players SET progress_level = ? WHERE player_id = ?')
+    .prepare("UPDATE players SET progress_level = ? WHERE player_id = ?")
     .run(level, playerId);
 }
 
 export function getPlayerById(playerId: string): PlayerRow | null {
   return (
-    getDb()
-      .prepare('SELECT * FROM players WHERE player_id = ?')
-      .get(playerId) as PlayerRow | undefined
-  ) ?? null;
+    (getDb()
+      .prepare("SELECT * FROM players WHERE player_id = ?")
+      .get(playerId) as PlayerRow | undefined) ?? null
+  );
 }
 
 export function queryPlayers(opts: QueryPlayersOptions = {}): PlayerRow[] {
@@ -163,19 +222,19 @@ export function queryPlayers(opts: QueryPlayersOptions = {}): PlayerRow[] {
   const params: (string | number)[] = [];
 
   if (opts.region) {
-    conditions.push('region = ?');
+    conditions.push("region = ?");
     params.push(opts.region);
   }
   if (opts.position) {
-    conditions.push('position = ?');
+    conditions.push("position = ?");
     params.push(opts.position);
   }
   if (opts.minTier !== undefined) {
-    conditions.push('progress_level >= ?');
+    conditions.push("progress_level >= ?");
     params.push(opts.minTier);
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   return getDb()
     .prepare(`SELECT * FROM players ${where} ORDER BY created_at ASC`)
     .all(...params) as PlayerRow[];
