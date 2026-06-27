@@ -149,12 +149,17 @@ export async function filterPlayers(
       region: sanitizedRegion,
       position: normalizedPosition ?? sanitizedPosition,
       minTier,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
     });
 
-    const total = rows.length;
+    const total = countPlayers({
+      region: sanitizedRegion,
+      position: normalizedPosition ?? sanitizedPosition,
+      minTier,
+    });
     const pages = Math.ceil(total / pageSize);
-    const paginated = rows.slice((page - 1) * pageSize, page * pageSize);
-    const enriched = paginated.map((row) => ({
+    const enriched = rows.map((row) => ({
       player_id: row.player_id,
       wallet: row.wallet,
       position: row.position,

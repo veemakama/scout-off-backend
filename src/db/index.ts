@@ -148,6 +148,8 @@ export interface QueryPlayersOptions {
   region?: string;
   position?: string;
   minTier?: number;
+  limit?: number;
+  offset?: number;
 }
 
 export interface PlayerProfileHistoryRow {
@@ -215,7 +217,7 @@ export function getPlayerById(playerId: string): PlayerRow | null {
   );
 }
 
-export function queryPlayers(opts: QueryPlayersOptions = {}): PlayerRow[] {
+function buildPlayerWhereClause(opts: QueryPlayersOptions): { where: string; params: (string | number)[] } {
   const conditions: string[] = [];
   const params: (string | number)[] = [];
 

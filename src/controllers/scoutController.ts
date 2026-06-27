@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getEvents } from '../db';
 import { submitContactPayment, isSubscribed, purchaseSubscription, PaymentError } from '../services/stellar';
 import { logger } from '../utils/logger';
+import { isValidEvidenceUri } from './validatorController';
 
 function isValidEvidenceUri(uri: string): boolean {
   return uri.startsWith('ipfs://') || uri.startsWith('https://');
@@ -128,6 +129,34 @@ export async function unlockContact(req: Request, res: Response, next: NextFunct
 
     const result = await submitContactPayment(wallet, playerId);
     res.json({ success: true, data: result });
+  } catch (err) {
+    if (err instanceof PaymentError) {
+      res.status(402).json({ success: false, error: err.message, code: err.code });
+      return;
+    }
+    next(err);
+  }
+}
+
+/** POST /api/scouts/:wallet/subscribe */
+export async function subscribe(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { wallet } = req.params;
+    const { tier, duration } = req.body as { tier?: 'basic' | 'premium'; duration?: number };
+
+    if ((req as any).account !== wallet) {
+      logger.warn(`[scout] action=subscribe_denied scout=${wallet} reason=wallet_mismatch`);
+      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
+      return;
+    }
+
+    if (!tier || !duration || !['basic', 'premium'].includes(tier) || duration < 1 || duration > 365) {
+      res.status(400).json({ success: false, error: 'tier must be basic or premium and duration must be between 1 and 365' });
+      return;
+    }
+
+    const result = await purchaseSubscription(wallet, tier, duration);
+    res.status(201).json({ success: true, data: result });
   } catch (err) {
     if (err instanceof PaymentError) {
       res.status(402).json({ success: false, error: err.message, code: err.code });
