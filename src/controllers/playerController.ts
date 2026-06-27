@@ -169,6 +169,17 @@ export async function filterPlayers(
       created_at: row.created_at,
       ...enrichPlayerResult(row.progress_level),
     }));
+
+    const scoutWallet = (req as any).account ?? 'anonymous';
+    recordAudit(scoutWallet, 'player_search', {
+      region: sanitizedRegion ?? null,
+      position: normalizedPosition ?? sanitizedPosition ?? null,
+      minTier: minTier ?? null,
+      page,
+      pageSize,
+      resultCount: total,
+    });
+
     res.json({ success: true, data: enriched, total, page, pageSize, pages });
   } catch (err) {
     next(err);
