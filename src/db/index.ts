@@ -58,7 +58,7 @@ export function initDb(): void {
 }
 
 export function getDb(): Database.Database {
-  if (!_db) throw new Error('Database not initialised — call initDb() first');
+  if (!_db) throw new Error("Database not initialised — call initDb() first");
   return _db;
 }
 
@@ -89,7 +89,10 @@ export interface GetEventsOptions {
   offset?: number;
 }
 
-export function getEvents(type?: ContractEventType, opts?: GetEventsOptions): EventRecord[] {
+export function getEvents(
+  type?: ContractEventType,
+  opts?: GetEventsOptions,
+): EventRecord[] {
   const db = getDb();
   const { limit, offset } = opts ?? {};
   const hasPagination = limit !== undefined && offset !== undefined;
@@ -147,6 +150,39 @@ export interface QueryPlayersOptions {
   minTier?: number;
 }
 
+export interface PlayerProfileHistoryRow {
+  metadata_uri: string;
+  changed_at: number;
+  tx_hash: string;
+}
+
+export function insertPlayerProfileHistory(p: {
+  player_id: string;
+  metadata_uri: string;
+  changed_at: number;
+  tx_hash: string;
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO player_profile_history (player_id, metadata_uri, changed_at, tx_hash)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(p.player_id, p.metadata_uri, p.changed_at, p.tx_hash);
+}
+
+export function getPlayerProfileHistory(
+  playerId: string,
+): PlayerProfileHistoryRow[] {
+  return getDb()
+    .prepare(
+      `SELECT metadata_uri, changed_at, tx_hash
+       FROM player_profile_history
+       WHERE player_id = ?
+       ORDER BY changed_at DESC`,
+    )
+    .all(playerId) as PlayerProfileHistoryRow[];
+}
+
 export function upsertPlayer(p: {
   player_id: string;
   wallet: string;
@@ -184,15 +220,15 @@ export function queryPlayers(opts: QueryPlayersOptions = {}): PlayerRow[] {
   const params: (string | number)[] = [];
 
   if (opts.region) {
-    conditions.push('region = ?');
+    conditions.push("region = ?");
     params.push(opts.region);
   }
   if (opts.position) {
-    conditions.push('position = ?');
+    conditions.push("position = ?");
     params.push(opts.position);
   }
   if (opts.minTier !== undefined) {
-    conditions.push('progress_level >= ?');
+    conditions.push("progress_level >= ?");
     params.push(opts.minTier);
   }
 
