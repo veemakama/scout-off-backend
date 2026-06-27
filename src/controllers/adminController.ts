@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
-import { getEvents } from '../db';
+import { getEvents, getLastLedger, setLastLedger } from '../db';
 import { ApiResponse, EventRecord } from '../types';
 import { logAuditEvent } from '../services/audit';
 import { withdrawFees as stellarWithdrawFees, FeeWithdrawalError, FeeWithdrawalResult } from '../services/stellar';
@@ -350,5 +350,29 @@ export async function withdrawFeesController(req: Request, res: Response, next: 
     next(err);
   } finally {
     withdrawalInProgress = false;
+  }
+}
+
+const reindexSchema = z.object({
+  fromLedger: z.number().int().min(0),
+});
+
+/**
+ * POST /api/admin/indexer/reindex
+ * Resets the indexer's last_ledger to fromLedger so the next poll replays from that point.
+ */
+export async function reindex(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = reindexSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.errors[0]?.message ?? 'fromLedger must be a non-negative integer' });
+      return;
+    }
+    const { fromLedger } = parsed.data;
+    const previous = getLastLedger();
+    setLastLedger(fromLedger);
+    res.json({ success: true, data: { fromLedger, previous } });
+  } catch (err) {
+    next(err);
   }
 }
