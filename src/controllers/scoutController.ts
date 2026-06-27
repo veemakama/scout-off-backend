@@ -30,12 +30,12 @@ async function scoutHasPlayerAccess(scoutWallet: string, playerId: string): Prom
   const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === scoutWallet);
   const latestSub = subs.at(-1);
   if (latestSub) {
-    const expiresAt = latestSub.payload.subscriptionExpiry as number;
+    const expiresAt = latestSub.payload.subscription_expiry as number;
     if (expiresAt > Math.floor(Date.now() / 1000)) return true;
   }
 
   return getEvents('contact_unlocked').some(
-    (e) => e.payload.scout === scoutWallet && e.payload.playerId === playerId
+    (e) => e.payload.scout === scoutWallet && e.payload.player_id === playerId
   );
 }
 
