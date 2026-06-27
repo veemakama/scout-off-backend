@@ -63,20 +63,31 @@ export function postToken(req: Request, res: Response, next: NextFunction): void
     const expiresAt = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
     res.json({ token, account, expiresAt });
   } catch (err) {
-    if (err instanceof Error && (
-      err.message === 'Invalid challenge signature' ||
-      err.message === 'Missing source account in challenge' ||
-      err.message === 'Challenge has expired'
-    )) {
-      let attemptedWallet: string | null = null;
-      try { attemptedWallet = extractAccount((req.body as { transaction?: string }).transaction ?? ''); } catch { /* not extractable */ }
-      logger.warn('[auth] failed_token_exchange', {
+    if (err instanceof Error) {
+      const knownAuthErrors = [
+        'Invalid challenge signature',
+        'Missing source account in challenge',
+        'Challenge has expired',
+      ];
+      if (knownAuthErrors.includes(err.message)) {
+        let attemptedWallet: string | null = null;
+        try { attemptedWallet = extractAccount((req.body as { transaction?: string }).transaction ?? ''); } catch { /* not extractable */ }
+        logger.warn('[auth] failed_token_exchange', {
+          correlationId: req.correlationId,
+          origin: extractClientIp(req),
+          attemptedWallet,
+          reason: err.message,
+        });
+        res.status(401).json({ success: false, error: err.message });
+        return;
+      }
+      // XDR parse failures and other transaction-format errors are bad input → 400
+      logger.warn('[auth] failed_token_request malformed_xdr', {
         correlationId: req.correlationId,
         origin: extractClientIp(req),
-        attemptedWallet,
         reason: err.message,
       });
-      res.status(401).json({ success: false, error: err.message });
+      res.status(400).json({ success: false, error: 'Invalid transaction: could not parse XDR' });
       return;
     }
     next(err);
