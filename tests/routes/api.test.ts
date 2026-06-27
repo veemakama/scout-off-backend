@@ -162,6 +162,100 @@ describe('GET /api/validators/milestones/pending', () => {
   });
 });
 
+describe('POST /api/validators/:wallet/milestones/:milestoneId/reject', () => {
+  it('returns 401 when no token is provided', async () => {
+    const res = await request(app)
+      .post('/api/validators/GSOME_WALLET/milestones/milestone-1/reject')
+      .send({ reason: 'Fraudulent evidence' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when authenticated as non-validator role', async () => {
+    const token = await getPlayerToken();
+    const res = await request(app)
+      .post('/api/validators/GSOME_WALLET/milestones/milestone-1/reject')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'Fraudulent evidence' });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when JWT wallet does not match URL wallet param', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR(), role: 'validator' });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .post('/api/validators/GDIFFERENT_WALLET/milestones/milestone-1/reject')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'Fraudulent evidence' });
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 400 when reason is missing', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR(), role: 'validator' });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .post(`/api/validators/${kp.publicKey()}/milestones/milestone-1/reject`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 400 when reason is an empty string', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR(), role: 'validator' });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .post(`/api/validators/${kp.publicKey()}/milestones/milestone-1/reject`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: '' });
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 404 for unknown milestone', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR(), role: 'validator' });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .post(`/api/validators/${kp.publicKey()}/milestones/nonexistent-milestone-id/reject`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'Evidence is fake' });
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+  });
+});
+
 describe('POST /api/validators/milestone', () => {
   it('returns 401 when no token is provided', async () => {
     const res = await request(app).post('/api/validators/milestone').send({
@@ -197,5 +291,71 @@ describe('POST /api/validators/milestone', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ playerId: 'player-1', milestoneType: 'identity' });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('PATCH /api/players/:playerId/region', () => {
+  it('returns 401 when no token is provided', async () => {
+    const res = await request(app)
+      .patch('/api/players/player-1/region')
+      .send({ region: 'europe' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for unknown player', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR() });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .patch('/api/players/nonexistent-player/region')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ region: 'europe' });
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 400 when region is missing', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR() });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .patch('/api/players/player-1/region')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 400 when region is an empty string', async () => {
+    const { Keypair, Transaction, Networks } = await import('@stellar/stellar-sdk');
+    const kp = Keypair.random();
+    const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
+    const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
+    tx.sign(kp);
+    const tokenRes = await request(app)
+      .post('/auth/token')
+      .send({ transaction: tx.toXDR() });
+    const token = tokenRes.body.token;
+
+    const res = await request(app)
+      .patch('/api/players/player-1/region')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ region: '' });
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
   });
 });

@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { Keypair } from '@stellar/stellar-sdk';
 import { pinJson, gatewayUrl } from '../services/ipfs';
 import { getEvents } from '../services/indexer';
+import { invokeContract, strVal } from '../utils/contract';
+import config from '../config';
 import { ApiResponse } from '../types';
 
 const registerSchema = z.object({
@@ -61,6 +64,38 @@ export async function filterPlayers(req: Request, res: Response, next: NextFunct
       players = players.filter((p) => Number(p.progress_level) >= minTier);
     const paginated = players.slice((page - 1) * pageSize, page * pageSize);
     res.json({ success: true, data: paginated, total: players.length, page, pageSize });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/players/:playerId/region */
+export async function updatePlayerRegion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { playerId } = req.params;
+    const { region } = z.object({ region: z.string().min(1) }).parse(req.body);
+
+    const events = getEvents('player_registered').filter(
+      (e) => e.payload.player_id === playerId
+    );
+    if (!events.length) {
+      res.status(404).json({ success: false, error: 'Player not found' });
+      return;
+    }
+
+    const player = events[0].payload;
+    if ((req as any).account !== player.wallet) {
+      res.status(403).json({ success: false, error: 'Insufficient permissions' });
+      return;
+    }
+
+    const keypair = Keypair.fromSecret(config.platformSecret);
+    await invokeContract(keypair, 'update_player_region', [
+      strVal(playerId),
+      strVal(region),
+    ]);
+
+    res.json({ success: true, data: { playerId, region } });
   } catch (err) {
     next(err);
   }
