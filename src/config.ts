@@ -65,10 +65,17 @@ const config = {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000', 10),
     max: parseInt(process.env.RATE_LIMIT_MAX ?? (process.env.NODE_ENV === 'test' ? '1000' : '60'), 10),
   },
+  authRateLimit: {
+    windowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? '60000', 10),
+    max: parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? (process.env.NODE_ENV === 'test' ? '1000' : '5'), 10),
+  },
   bodyLimit: {
     // Maximum JSON payload size (default: 1MB)
     json: process.env.JSON_PAYLOAD_LIMIT ?? '1mb',
   },
+  allowedOrigins: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    : [],
   logLevel: (process.env.LOG_LEVEL ?? ENV_LOG_LEVEL[nodeEnv]) as LogLevel,
   showErrorDetails: nodeEnv === 'development' || nodeEnv === 'test',
   useMockServices: nodeEnv === 'development' || nodeEnv === 'test',
