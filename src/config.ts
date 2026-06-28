@@ -45,6 +45,7 @@ const config = {
     gateway: process.env.PINATA_GATEWAY ?? 'https://gateway.pinata.cloud',
   },
   platformFeeBps: parseInt(process.env.PLATFORM_FEE_BPS ?? '500', 10),
+  platformSecret: process.env.PLATFORM_SECRET ?? '',
   dbPath: process.env.DB_PATH ?? 'scout-off.db',
   stellarHealthCheckEnabled: process.env.STELLAR_HEALTH_CHECK !== 'false',
   adminWallet: process.env.ADMIN_WALLET ?? '',
