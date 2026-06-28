@@ -1,9 +1,17 @@
 import { server } from './stellar';
 import config from '../config';
-import { getDb, getLastLedger, setLastLedger } from '../db';
+import { 
+  getDb, 
+  getLastLedger, 
+  setLastLedger, 
+  upsertPlayer, 
+  updatePlayerProgress,
+  incrementValidatorApproved,
+  incrementValidatorRejected,
+  insertPendingMilestone,
+  removePendingMilestone
+} from '../db';
 import { dispatchEventWebhook } from './webhooks';
-import { logger } from '../utils/logger';
-import { getDb, getLastLedger, setLastLedger, upsertPlayer, updatePlayerProgress } from '../db';
 import { logger } from '../utils/logger';
 
 /** Current indexer lag in ledgers (latestChainLedger - lastIndexedLedger). Reset after each poll. */
@@ -86,18 +94,10 @@ export async function indexEvents(): Promise<void> {
 
   if (!response.events.length) return;
 
-  const approvedMilestones: Array<{ type: string; payload: unknown }> = [];
+  const webhookEvents: Array<{ type: string; payload: unknown }> = [];
 
   const insertMany = db.transaction((events: typeof response.events) => {
     for (const raw of events) {
-      const eventType = raw.topic[0]?.value() as string;
-      const eventPayload = raw.value?.value() ?? {};
-      const eventId = normalizeEventId(config.contractId, raw.ledger, raw.txHash);
-      onBeforeInsert(eventId);
-      insert.run(eventType, raw.ledger, raw.txHash, JSON.stringify(eventPayload));
-      onAfterInsert(eventId);
-      if (eventType === 'milestone_approved') {
-        approvedMilestones.push({ type: eventType, payload: eventPayload });
       const type = raw.topic[0]?.value() as string;
       const payload = normalizePayload((raw.value?.value() as unknown as Record<string, unknown>) ?? {});
       const eventId = normalizeEventId(config.contractId, raw.ledger, raw.txHash);
@@ -114,17 +114,40 @@ export async function indexEvents(): Promise<void> {
           metadata_uri: payload.metadata_uri as string | undefined,
           created_at: raw.ledger,
         });
+      } else if (type === 'milestone_submitted') {
+        // Insert into pending_milestones
+        const milestoneId = payload.milestone_id as string;
+        const playerId = payload.player_id as string;
+        const validatorWallet = payload.validator as string;
+        const milestoneType = payload.milestone_type as string;
+        const evidenceUri = payload.evidence_uri as string;
+        const submittedAt = raw.ledger;
+        if (milestoneId && playerId && validatorWallet) {
+          insertPendingMilestone(milestoneId, playerId, validatorWallet, milestoneType, evidenceUri, submittedAt);
+        }
+        webhookEvents.push({ type, payload });
       } else if (type === 'milestone_approved') {
         const playerId = payload.player_id as string;
         const level = Number(payload.progress_level ?? 0);
         if (playerId) updatePlayerProgress(playerId, level);
+        const validatorWallet = payload.validator as string;
+        if (validatorWallet) incrementValidatorApproved(validatorWallet);
+        const milestoneId = payload.milestone_id as string;
+        if (milestoneId) removePendingMilestone(milestoneId);
+        webhookEvents.push({ type, payload });
+      } else if (type === 'milestone_rejected') {
+        const validatorWallet = payload.validator as string;
+        if (validatorWallet) incrementValidatorRejected(validatorWallet);
+        const milestoneId = payload.milestone_id as string;
+        if (milestoneId) removePendingMilestone(milestoneId);
+        webhookEvents.push({ type, payload });
       }
     }
   });
 
   insertMany(response.events);
 
-  for (const { type, payload } of approvedMilestones) {
+  for (const { type, payload } of webhookEvents) {
     dispatchEventWebhook(type, payload).catch((err: unknown) => {
       logger.warn(`[indexer] webhook dispatch failed for ${type}: ${err instanceof Error ? err.message : String(err)}`);
     });
