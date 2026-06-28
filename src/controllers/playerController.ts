@@ -9,6 +9,7 @@ import {
   getPlayerById,
   insertPlayerProfileHistory,
   queryPlayers,
+  countPlayers,
 } from "../db";
 
 import { queryMilestones, updateProfile } from "../services/stellar";
@@ -19,6 +20,7 @@ import { validateMinTier } from "../utils/minTierValidator";
 import { normalizePosition } from "../utils/positionAliases";
 import { dispatchEventWebhook } from "../services/webhooks";
 import { enrichPlayerResult } from "../utils/searchEnrichment";
+import { recordAudit } from "../utils/audit";
 
 const baseRegistrationSchema = z.object({
   wallet: z.string().min(56).max(56),
@@ -102,7 +104,7 @@ export async function getPlayer(
     const playerId = sanitizeInput(req.params.playerId);
     const row = getPlayerById(playerId);
     if (!row) {
-      res.status(404).json({ success: false, error: "Player not found" });
+      res.status(404).json({ success: false, error: "Player not found", code: ErrorCode.PLAYER_NOT_FOUND });
       return;
     }
     const { tierName, tierDescription } = getTierMeta(row.progress_level);
@@ -134,7 +136,7 @@ export async function filterPlayers(
   try {
     const tierResult = validateMinTier(req.query.minTier);
     if (!tierResult.valid) {
-      res.status(400).json({ success: false, error: tierResult.error });
+      res.status(400).json({ success: false, error: tierResult.error, code: ErrorCode.VALIDATION_ERROR });
       return;
     }
     const minTier = tierResult.tier;
@@ -245,6 +247,7 @@ export async function getPlayerMilestones(
       res.status(400).json({
         success: false,
         error: parsed.error.errors[0]?.message ?? "Invalid query parameters",
+        code: ErrorCode.VALIDATION_ERROR,
       });
       return;
     }
