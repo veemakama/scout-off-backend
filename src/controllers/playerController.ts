@@ -9,6 +9,7 @@ import {
   getPlayerById,
   insertPlayerProfileHistory,
   queryPlayers,
+  countPlayers,
 } from "../db";
 
 import { queryMilestones, updateProfile } from "../services/stellar";
@@ -19,7 +20,7 @@ import { validateMinTier } from "../utils/minTierValidator";
 import { normalizePosition } from "../utils/positionAliases";
 import { dispatchEventWebhook } from "../services/webhooks";
 import { enrichPlayerResult } from "../utils/searchEnrichment";
-import { ErrorCode } from "../utils/errorCodes";
+import { recordAudit } from "../utils/audit";
 
 const baseRegistrationSchema = z.object({
   wallet: z.string().min(56).max(56),
