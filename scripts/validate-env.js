@@ -1,25 +1,53 @@
 #!/usr/bin/env node
 /**
- * Validates environment before the server starts.
- * - Fails fast when required runtime env vars are unset.
- * - Ensures every env var referenced in src/ is documented in .env.example.
+ * Environment variable validation script.
  *
- * Run with: node scripts/validate-env.js
- * Wired into npm start/dev via prestart/predev lifecycle hooks.
+ * Two modes:
+ *   1. CI / documentation check (default): verifies every process.env.VAR
+ *      referenced in src/ is listed in .env.example.
+ *   2. Runtime startup check (--runtime): verifies required vars are set in
+ *      the current process environment and validates NODE_ENV.
+ *
+ * Usage:
+ *   node scripts/validate-env.js            # CI documentation check
+ *   node scripts/validate-env.js --runtime  # called by src/config.ts on startup
  */
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
 
-const REQUIRED = ['CONTRACT_ID', 'JWT_SECRET'];
+// ─── Required vars that must be present at runtime ───────────────────────────
+const REQUIRED_RUNTIME_VARS = ['CONTRACT_ID', 'JWT_SECRET'];
 
-const missingRequired = REQUIRED.filter((key) => !process.env[key]);
-if (missingRequired.length) {
-  console.error('Missing required environment variables:');
-  missingRequired.forEach((key) => console.error(`  ${key}`));
-  process.exit(1);
+// Valid NODE_ENV values; defaults to 'development' when unset.
+const VALID_NODE_ENVS = ['development', 'test', 'production'];
+
+// ─── Runtime check ────────────────────────────────────────────────────────────
+if (process.argv.includes('--runtime')) {
+  const errors = [];
+
+  // Validate NODE_ENV
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  if (!VALID_NODE_ENVS.includes(nodeEnv)) {
+    errors.push(`NODE_ENV="${nodeEnv}" is invalid. Must be one of: ${VALID_NODE_ENVS.join(', ')}`);
+  }
+
+  // Validate required vars
+  for (const key of REQUIRED_RUNTIME_VARS) {
+    if (!process.env[key]) {
+      errors.push(`Missing required environment variable: ${key}`);
+    }
+  }
+
+  if (errors.length) {
+    errors.forEach(e => console.error(`[env] ERROR: ${e}`));
+    process.exit(1);
+  }
+
+  console.log('[env] All required environment variables are set ✓');
+  process.exit(0);
 }
 
+// ─── CI / documentation check ────────────────────────────────────────────────
 const examplePath = path.resolve(__dirname, '../.env.example');
 const exampleKeys = new Set(
   fs
