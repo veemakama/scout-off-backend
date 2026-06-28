@@ -70,6 +70,8 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_pending_milestones_validator ON pending_milestones (validator_wallet);
     CREATE INDEX IF NOT EXISTS idx_pending_milestones_player ON pending_milestones (player_id);
   `);
+  // Run SQL migrations (player_profile_history, idempotency_keys, etc.)
+  runMigrations(_db);
 }
 
 export function getDb(): Database.Database {
@@ -358,90 +360,62 @@ function buildPlayerWhereClause(opts: QueryPlayersOptions): { where: string; par
   return { where, params };
 }
 
-// ─── Audit log helpers ────────────────────────────────────────────────────────
+// ─── Idempotency key helpers ──────────────────────────────────────────────────
 
-export interface AuditLogRow {
-  id: number;
-  action: string;
-  admin_wallet: string;
-  query_params: string;
-  created_at: string;
+export interface IdempotencyRecord {
+  key: string;
+  status_code: number;
+  response: string; // raw JSON string
+  created_at: number;
+  expires_at: number;
 }
 
-export interface AuditLogOptions {
-  action?: string;
-  startDate?: string;
-  endDate?: string;
-  limit?: number;
-  offset?: number;
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Look up a non-expired idempotency key.
+ * Returns the stored record, or null when the key is absent or expired.
+ */
+export function getIdempotencyRecord(key: string): IdempotencyRecord | null {
+  const sql = 'SELECT * FROM idempotency_keys WHERE key = ? AND expires_at > ?';
+  const now = Date.now();
+  return timedQuery(sql, () =>
+    (getDb().prepare(sql).get(key, now) as IdempotencyRecord | undefined) ?? null
+  );
 }
 
-export function insertAuditLog(entry: { action: string; adminWallet: string; queryParams: object; createdAt: string }): void {
-  getDb()
-    .prepare('INSERT INTO audit_log (action, admin_wallet, query_params, created_at) VALUES (?, ?, ?, ?)')
-    .run(entry.action, entry.adminWallet, JSON.stringify(entry.queryParams), entry.createdAt);
+/**
+ * Persist a new idempotency key with its response payload.
+ * Silently ignores conflicts — two concurrent requests with the same key
+ * will both compute a response but only the first one to commit wins; the
+ * second one will then be served the stored value by getIdempotencyRecord.
+ */
+export function saveIdempotencyRecord(
+  key: string,
+  statusCode: number,
+  body: unknown,
+): void {
+  const now = Date.now();
+  const sql = `
+    INSERT INTO idempotency_keys (key, status_code, response, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(key) DO NOTHING
+  `;
+  timedQuery(sql, () =>
+    getDb()
+      .prepare(sql)
+      .run(key, statusCode, JSON.stringify(body), now, now + IDEMPOTENCY_TTL_MS)
+  );
 }
 
-export function getAuditLogs(opts: AuditLogOptions = {}): AuditLogRow[] {
-  const { action, startDate, endDate, limit = 20, offset = 0 } = opts;
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-
-  if (action) { conditions.push('action = ?'); params.push(action); }
-  if (startDate) { conditions.push('created_at >= ?'); params.push(startDate); }
-  if (endDate) { conditions.push('created_at <= ?'); params.push(endDate); }
-
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  params.push(limit, offset);
-  return getDb()
-    .prepare(`SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
-    .all(...params) as AuditLogRow[];
-}
-
-export function getAuditLogsCount(opts: Omit<AuditLogOptions, 'limit' | 'offset'> = {}): number {
-  const { action, startDate, endDate } = opts;
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-
-  if (action) { conditions.push('action = ?'); params.push(action); }
-  if (startDate) { conditions.push('created_at >= ?'); params.push(startDate); }
-  if (endDate) { conditions.push('created_at <= ?'); params.push(endDate); }
-
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const row = getDb()
-    .prepare(`SELECT COUNT(*) AS count FROM audit_log ${where}`)
-    .get(...params) as { count: number } | undefined;
-  return row?.count ?? 0;
-}
-
-// ─── Pending pins helpers ─────────────────────────────────────────────────────
-
-export interface PendingPinRow {
-  id: number;
-  payload: string;
-  attempts: number;
-  created_at: string;
-  last_tried: string | null;
-}
-
-export function insertPendingPin(payload: object): void {
-  getDb()
-    .prepare('INSERT INTO pending_pins (payload, attempts, created_at) VALUES (?, 0, ?)')
-    .run(JSON.stringify(payload), new Date().toISOString());
-}
-
-export function getPendingPins(limit = 10): PendingPinRow[] {
-  return getDb()
-    .prepare('SELECT * FROM pending_pins ORDER BY created_at ASC LIMIT ?')
-    .all(limit) as PendingPinRow[];
-}
-
-export function deletePendingPin(id: number): void {
-  getDb().prepare('DELETE FROM pending_pins WHERE id = ?').run(id);
-}
-
-export function incrementPendingPinAttempts(id: number): void {
-  getDb()
-    .prepare('UPDATE pending_pins SET attempts = attempts + 1, last_tried = ? WHERE id = ?')
-    .run(new Date().toISOString(), id);
+/**
+ * Delete all idempotency records whose TTL has passed.
+ * Call this periodically (e.g., from the indexer poll loop) to keep the table small.
+ */
+export function purgeExpiredIdempotencyKeys(): number {
+  const sql = 'DELETE FROM idempotency_keys WHERE expires_at <= ?';
+  return timedQuery(sql, () => {
+    const info = getDb().prepare(sql).run(Date.now());
+    return info.changes;
+  });
 }

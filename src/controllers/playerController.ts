@@ -44,6 +44,8 @@ export const filterSchema = z.object({
   region: z.string().optional(),
   position: z.string().optional(),
   minTier: z.coerce.number().int().min(0).max(3).optional(),
+  sortBy: z.enum(['tier', 'region']).optional(),
+  sortOrder: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -104,7 +106,7 @@ export async function getPlayer(
     const playerId = sanitizeInput(req.params.playerId);
     const row = getPlayerById(playerId);
     if (!row) {
-      res.status(404).json({ success: false, error: "Player not found" });
+      res.status(404).json({ success: false, error: "Player not found", code: ErrorCode.PLAYER_NOT_FOUND });
       return;
     }
     const { tierName, tierDescription } = getTierMeta(row.progress_level);
@@ -136,7 +138,7 @@ export async function filterPlayers(
   try {
     const tierResult = validateMinTier(req.query.minTier);
     if (!tierResult.valid) {
-      res.status(400).json({ success: false, error: tierResult.error });
+      res.status(400).json({ success: false, error: tierResult.error, code: ErrorCode.VALIDATION_ERROR });
       return;
     }
     const minTier = tierResult.tier;
@@ -247,6 +249,7 @@ export async function getPlayerMilestones(
       res.status(400).json({
         success: false,
         error: parsed.error.errors[0]?.message ?? "Invalid query parameters",
+        code: ErrorCode.VALIDATION_ERROR,
       });
       return;
     }
