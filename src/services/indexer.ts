@@ -92,7 +92,7 @@ export async function indexEvents(): Promise<void> {
 
   if (!response.events.length) return;
 
-  const approvedMilestones: Array<{ type: string; payload: unknown }> = [];
+  const webhookEvents: Array<{ type: string; payload: unknown }> = [];
 
   const insertMany = db.transaction((events: typeof response.events) => {
     for (const raw of events) {
@@ -116,6 +116,18 @@ export async function indexEvents(): Promise<void> {
           metadata_uri: payload.metadata_uri as string | undefined,
           created_at: raw.ledger,
         });
+      } else if (type === 'milestone_submitted') {
+        // Insert into pending_milestones
+        const milestoneId = payload.milestone_id as string;
+        const playerId = payload.player_id as string;
+        const validatorWallet = payload.validator as string;
+        const milestoneType = payload.milestone_type as string;
+        const evidenceUri = payload.evidence_uri as string;
+        const submittedAt = raw.ledger;
+        if (milestoneId && playerId && validatorWallet) {
+          insertPendingMilestone(milestoneId, playerId, validatorWallet, milestoneType, evidenceUri, submittedAt);
+        }
+        webhookEvents.push({ type, payload });
       } else if (type === 'milestone_approved') {
         const playerId = payload.player_id as string;
         if (playerId) {
@@ -135,7 +147,7 @@ export async function indexEvents(): Promise<void> {
 
   insertMany(response.events);
 
-  for (const { type, payload } of approvedMilestones) {
+  for (const { type, payload } of webhookEvents) {
     dispatchEventWebhook(type, payload).catch((err: unknown) => {
       logger.warn(`[indexer] webhook dispatch failed for ${type}: ${err instanceof Error ? err.message : String(err)}`);
     });

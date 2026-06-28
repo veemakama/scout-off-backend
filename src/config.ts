@@ -48,6 +48,8 @@ const config = {
   dbPath: process.env.DB_PATH ?? 'scout-off.db',
   stellarHealthCheckEnabled: process.env.STELLAR_HEALTH_CHECK !== 'false',
   adminWallet: process.env.ADMIN_WALLET ?? '',
+  adminWallets: (process.env.ADMIN_WALLETS ?? process.env.ADMIN_WALLET ?? '').split(',').map(w => w.trim()).filter(w => w.length > 0),
+  adminThreshold: parseInt(process.env.ADMIN_THRESHOLD ?? '1', 10),
   securityHeaders: {
     hsts: process.env.SECURITY_HSTS ?? 'max-age=31536000; includeSubDomains',
     xContentTypeOptions: process.env.SECURITY_X_CONTENT_TYPE_OPTIONS ?? 'nosniff',
