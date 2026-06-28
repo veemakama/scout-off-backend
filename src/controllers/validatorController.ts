@@ -1,34 +1,102 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { logger } from '../utils/logger';
 import { pinJson } from '../services/ipfs';
-import { getEvents } from '../services/indexer';
+import { getPendingMilestones as getPendingMilestonesFromDb } from '../db';
+import { invalidateMilestoneCache } from '../services/cache';
+import { recordAudit } from '../utils/audit';
 
-const milestoneSchema = z.object({
+/**
+ * Validates that an evidence URI is secure and properly formatted.
+ * Accepts: ipfs://, https://
+ * Rejects: http://, plain strings, empty strings
+ */
+export function isValidEvidenceUri(uri: string): boolean {
+  if (!uri || typeof uri !== 'string') return false;
+  return uri.startsWith('ipfs://') || uri.startsWith('https://');
+}
+
+export const milestoneSchema = z.object({
   playerId: z.string().min(1),
   milestoneType: z.enum(['identity', 'performance', 'trial_offer']),
-  evidence: z.record(z.unknown()),
+  evidenceUri: z.string().min(1).refine(isValidEvidenceUri, 'evidenceUri must be a valid IPFS (ipfs://) or HTTPS URI'),
+});
+
+export const pendingQuerySchema = z.object({
+  region: z.string().optional(),
+  position: z.string().optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 /** POST /api/validators/milestone */
+function getCorrelationId(req: Request): string {
+  return String(req.headers?.['x-correlation-id'] ?? req.headers?.['correlation-id'] ?? 'none');
+}
+
 export async function submitMilestoneEvidence(req: Request, res: Response, next: NextFunction) {
   try {
-    const { playerId, milestoneType, evidence } = milestoneSchema.parse(req.body);
-    const cid = await pinJson({ playerId, milestoneType, ...evidence });
-    res.status(201).json({ success: true, data: { evidenceUri: cid } });
+    const { playerId, milestoneType, evidenceUri } = milestoneSchema.parse(req.body);
+    const evidenceCid = await pinJson({ playerId, milestoneType, evidenceUri });
+    // Invalidate milestone + player cache so updated progress tier is reflected
+    invalidateMilestoneCache(playerId);
+
+    const validatorWallet = req.account ?? 'unknown';
+    const correlationId = getCorrelationId(req);
+    logger.info(
+      `[validator] action=submit_milestone validator=${validatorWallet} playerId=${playerId} milestoneType=${milestoneType} evidenceCid=${evidenceCid} correlationId=${correlationId}`
+    );
+
+    recordAudit(validatorWallet, 'milestone_submitted', { playerId, milestoneType, evidenceCid }, `correlationId=${correlationId}`);
+
+    res.status(201).json({ success: true, data: { evidenceCid } });
   } catch (err) {
     next(err);
   }
 }
 
-/** GET /api/validators/milestones/pending */
+/** GET /api/validators/milestones/pending or /api/validators/:wallet/milestones/pending */
 export async function getPendingMilestones(req: Request, res: Response, next: NextFunction) {
   try {
-    const submitted = getEvents('milestone_submitted').map((e) => e.payload);
-    const approvedIds = new Set(
-      getEvents('milestone_approved').map((e) => e.payload.milestone_id)
+    const { region, position, page, pageSize } = pendingQuerySchema.parse(req.query);
+    const validatorWallet = req.params.wallet || req.account;
+    const { data, total } = getPendingMilestonesFromDb({
+      validatorWallet: validatorWallet,
+      region,
+      position,
+      page,
+      pageSize,
+    });
+
+    // Transform to the desired output format
+    const milestones = data.map((m) => ({
+      milestoneId: m.milestone_id,
+      playerId: m.player_id,
+      milestoneType: m.milestone_type,
+      evidenceUri: m.evidence_uri,
+      submittedAt: m.submitted_at,
+    }));
+
+    const currentValidatorWallet = req.account ?? 'unknown';
+    recordAudit(
+      currentValidatorWallet, 
+      'pending_milestones_viewed', 
+      { 
+        region: region ?? null, 
+        position: position ?? null,
+        validatorWallet,
+        pendingCount: total,
+      }, 
+      'pending milestones viewed'
     );
-    const pending = submitted.filter((m) => !approvedIds.has(m.milestone_id));
-    res.json({ success: true, data: pending });
+
+    res.json({ 
+      success: true, 
+      data: milestones, 
+      total, 
+      page: page || 1, 
+      pageSize: pageSize || 20 
+    });
   } catch (err) {
     next(err);
   }

@@ -1,10 +1,23 @@
 import { Router } from 'express';
-import { submitMilestoneEvidence, getPendingMilestones } from '../controllers/validatorController';
-import { requireAuth } from '../middleware/auth';
+import {
+  submitMilestoneEvidence,
+  getPendingMilestones,
+  milestoneSchema,
+  pendingQuerySchema,
+} from '../controllers/validatorController';
+import { requireRole } from '../middleware/auth';
+import { validateBody, validateQuery } from '../middleware/validate';
+import { rateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
-router.post('/milestone', requireAuth, submitMilestoneEvidence);
-router.get('/milestones/pending', requireAuth, getPendingMilestones);
+const milestoneRateLimit = rateLimit({
+  windowMs: Number(process.env.MILESTONE_RATE_WINDOW_MS) || 60_000,
+  max: Number(process.env.MILESTONE_RATE_MAX) || 10,
+});
+
+router.post('/milestone', milestoneRateLimit, requireRole('validator'), validateBody(milestoneSchema), submitMilestoneEvidence);
+router.get('/milestones/pending', requireRole('validator'), validateQuery(pendingQuerySchema), getPendingMilestones);
+router.get('/:wallet/milestones/pending', requireRole('validator'), validateQuery(pendingQuerySchema), getPendingMilestones);
 
 export default router;
