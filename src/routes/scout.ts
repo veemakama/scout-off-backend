@@ -1,18 +1,9 @@
 import { Router } from 'express';
-import {
-  getSubscription,
-  getUnlockedContacts,
-  unlockContact,
-  getPaymentHistory,
-  subscribe,
-  renewSubscription,
-  cancelSubscription,
-  submitTrialOffer,
-  trialOfferSchema,
-} from '../controllers/scoutController';
-import { requireRole } from '../middleware/auth';
-import { validateBody } from '../middleware/validate';
+import { getSubscription, getUnlockedContacts, getContactDetails, unlockContact, getPaymentHistory, subscribe, submitTrialOffer, trialOfferSchema } from '../controllers/scoutController';
 import { getScoutRecommendations } from '../controllers/scoutRecommendationsController';
+import { requireAuth, requireRole } from '../middleware/auth';
+import { validateBody } from '../middleware/validate';
+import { walletRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -42,7 +33,7 @@ router.get('/:wallet/subscription', requireRole('scout'), getSubscription);
  * @response 403 { success: false, error: string } - Scout role required or wallet mismatch
  * @auth Bearer (scout role required)
  */
-router.post('/:wallet/subscribe', requireRole('scout'), subscribe);
+router.post("/:wallet/subscribe", requireRole("scout"), walletRateLimit(), subscribe);
 
 /**
  * PUT /api/scouts/:wallet/subscribe
@@ -60,7 +51,8 @@ router.post('/:wallet/subscribe', requireRole('scout'), subscribe);
  * @response 403 { success: false, error: string } - Scout role required or wallet mismatch
  * @auth Bearer (scout role required)
  */
-router.put('/:wallet/subscribe', requireRole('scout'), renewSubscription);
+router.get("/:wallet/contacts", requireRole("scout"), getUnlockedContacts);
+router.get("/:wallet/contacts/:playerId", requireRole("scout"), getContactDetails);
 
 /**
  * DELETE /api/scouts/:wallet/subscribe
@@ -84,8 +76,9 @@ router.get('/:wallet/contacts', requireRole('scout'), getUnlockedContacts);
  * POST /api/scouts/:wallet/contacts/:playerId/unlock
  */
 router.post(
-  '/:wallet/contacts/:playerId/unlock',
-  requireRole('scout'),
+  "/:wallet/contacts/:playerId/unlock",
+  requireRole("scout"),
+  walletRateLimit(),
   unlockContact,
 );
 

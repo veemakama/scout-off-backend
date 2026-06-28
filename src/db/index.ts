@@ -54,6 +54,21 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_players_region   ON players (region);
     CREATE INDEX IF NOT EXISTS idx_players_position ON players (position);
     CREATE INDEX IF NOT EXISTS idx_players_tier     ON players (progress_level);
+    CREATE TABLE IF NOT EXISTS validator_stats (
+      wallet             TEXT PRIMARY KEY,
+      milestones_approved INTEGER DEFAULT 0,
+      milestones_rejected INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS pending_milestones (
+      milestone_id    TEXT PRIMARY KEY,
+      player_id       TEXT NOT NULL,
+      validator_wallet TEXT NOT NULL,
+      milestone_type  TEXT NOT NULL,
+      evidence_uri    TEXT NOT NULL,
+      submitted_at    INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_milestones_validator ON pending_milestones (validator_wallet);
+    CREATE INDEX IF NOT EXISTS idx_pending_milestones_player ON pending_milestones (player_id);
   `);
 }
 
@@ -210,6 +225,111 @@ export function updatePlayerProgress(playerId: string, level: number): void {
   timedQuery(sql, () => getDb().prepare(sql).run(level, playerId));
 }
 
+export interface ValidatorStatsRow {
+  wallet: string;
+  milestones_approved: number;
+  milestones_rejected: number;
+}
+
+export function incrementValidatorApproved(wallet: string): void {
+  const sql = `INSERT INTO validator_stats (wallet, milestones_approved, milestones_rejected)
+               VALUES (?, 1, 0)
+               ON CONFLICT(wallet) DO UPDATE SET milestones_approved = milestones_approved + 1`;
+  timedQuery(sql, () => getDb().prepare(sql).run(wallet));
+}
+
+export function incrementValidatorRejected(wallet: string): void {
+  const sql = `INSERT INTO validator_stats (wallet, milestones_approved, milestones_rejected)
+               VALUES (?, 0, 1)
+               ON CONFLICT(wallet) DO UPDATE SET milestones_rejected = milestones_rejected + 1`;
+  timedQuery(sql, () => getDb().prepare(sql).run(wallet));
+}
+
+export function getValidatorStats(wallet: string): ValidatorStatsRow | null {
+  const sql = 'SELECT * FROM validator_stats WHERE wallet = ?';
+  return timedQuery(sql, () => 
+    (getDb().prepare(sql).get(wallet) as ValidatorStatsRow | undefined) ?? null
+  );
+}
+
+export interface PendingMilestoneRow {
+  milestone_id: string;
+  player_id: string;
+  validator_wallet: string;
+  milestone_type: string;
+  evidence_uri: string;
+  submitted_at: number;
+}
+
+export function insertPendingMilestone(
+  milestoneId: string,
+  playerId: string,
+  validatorWallet: string,
+  milestoneType: string,
+  evidenceUri: string,
+  submittedAt: number
+): void {
+  const sql = `INSERT OR IGNORE INTO pending_milestones 
+               (milestone_id, player_id, validator_wallet, milestone_type, evidence_uri, submitted_at) 
+               VALUES (?, ?, ?, ?, ?, ?)`;
+  timedQuery(sql, () => getDb().prepare(sql).run(milestoneId, playerId, validatorWallet, milestoneType, evidenceUri, submittedAt));
+}
+
+export function removePendingMilestone(milestoneId: string): void {
+  const sql = 'DELETE FROM pending_milestones WHERE milestone_id = ?';
+  timedQuery(sql, () => getDb().prepare(sql).run(milestoneId));
+}
+
+export interface GetPendingMilestonesOptions {
+  validatorWallet?: string;
+  position?: string;
+  region?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export function getPendingMilestones(options: GetPendingMilestonesOptions): { data: PendingMilestoneRow[], total: number } {
+  const db = getDb();
+  // We need to join with players to filter by position and region
+  let whereConditions: string[] = [];
+  let params: (string | number)[] = [];
+
+  if (options.validatorWallet) {
+    whereConditions.push('pm.validator_wallet = ?');
+    params.push(options.validatorWallet);
+  }
+  if (options.position) {
+    whereConditions.push('p.position = ?');
+    params.push(options.position);
+  }
+  if (options.region) {
+    whereConditions.push('p.region = ?');
+    params.push(options.region);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  // Get total count
+  const countSql = `SELECT COUNT(*) AS total FROM pending_milestones pm 
+                    LEFT JOIN players p ON pm.player_id = p.player_id 
+                    ${whereClause}`;
+  const countRow = timedQuery(countSql, () => db.prepare(countSql).get(...params) as { total: number });
+  const total = countRow.total;
+
+  // Get paginated data
+  const page = options.page || 1;
+  const pageSize = options.pageSize || 20;
+  const offset = (page - 1) * pageSize;
+  const dataSql = `SELECT pm.* FROM pending_milestones pm 
+                   LEFT JOIN players p ON pm.player_id = p.player_id 
+                   ${whereClause}
+                   ORDER BY pm.submitted_at DESC
+                   LIMIT ? OFFSET ?`;
+  const data = timedQuery(dataSql, () => db.prepare(dataSql).all(...params, pageSize, offset) as PendingMilestoneRow[]);
+
+  return { data, total };
+}
+
 export function getPlayerById(playerId: string): PlayerRow | null {
   const sql = 'SELECT * FROM players WHERE player_id = ?';
   return timedQuery(sql, () =>
@@ -236,132 +356,4 @@ function buildPlayerWhereClause(opts: QueryPlayersOptions): { where: string; par
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return { where, params };
-}
-
-export function queryPlayers(opts: QueryPlayersOptions): PlayerRow[] {
-  const { where, params } = buildPlayerWhereClause(opts);
-  const pagination =
-    opts.limit !== undefined ? ` LIMIT ? OFFSET ?` : '';
-  const sql = `SELECT * FROM players ${where} ORDER BY created_at ASC${pagination}`;
-  const allParams: (string | number)[] = pagination
-    ? [...params, opts.limit!, opts.offset ?? 0]
-    : params;
-  return timedQuery(sql, () => getDb().prepare(sql).all(...allParams) as PlayerRow[]);
-}
-
-export function countPlayers(opts: Omit<QueryPlayersOptions, 'limit' | 'offset'>): number {
-  const { where, params } = buildPlayerWhereClause(opts);
-  const sql = `SELECT COUNT(*) AS count FROM players ${where}`;
-  const row = timedQuery(sql, () =>
-    getDb().prepare(sql).get(...params) as { count: number } | undefined
-  );
-  return row?.count ?? 0;
-}
-
-// ─── Subscription table helpers ───────────────────────────────────────────────
-
-export interface SubscriptionRow {
-  id: number;
-  scout_wallet: string;
-  tier: string;
-  expires_at: number;
-  cancelled_at: number | null;
-  created_at: number;
-}
-
-/** Insert a new subscription record and return its id. */
-export function insertSubscription(p: {
-  scout_wallet: string;
-  tier: string;
-  expires_at: number;
-  created_at: number;
-}): number {
-  const sql = `INSERT INTO subscriptions (scout_wallet, tier, expires_at, created_at)
-               VALUES (?, ?, ?, ?)`;
-  const result = timedQuery(sql, () =>
-    getDb().prepare(sql).run(p.scout_wallet, p.tier, p.expires_at, p.created_at)
-  );
-  return result.lastInsertRowid as number;
-}
-
-/** Return the latest subscription row for a scout (active or expired, but not cancelled). */
-export function getLatestSubscription(scoutWallet: string): SubscriptionRow | null {
-  const sql = `SELECT * FROM subscriptions
-               WHERE scout_wallet = ? AND cancelled_at IS NULL
-               ORDER BY expires_at DESC
-               LIMIT 1`;
-  return timedQuery(sql, () =>
-    (getDb().prepare(sql).get(scoutWallet) as SubscriptionRow | undefined) ?? null
-  );
-}
-
-/** Extend an existing subscription's expiry and update its tier. */
-export function renewSubscription(p: {
-  id: number;
-  tier: string;
-  expires_at: number;
-}): void {
-  const sql = `UPDATE subscriptions SET tier = ?, expires_at = ? WHERE id = ?`;
-  timedQuery(sql, () => getDb().prepare(sql).run(p.tier, p.expires_at, p.id));
-}
-
-/** Mark a subscription as cancelled. */
-export function cancelSubscription(p: {
-  id: number;
-  cancelled_at: number;
-}): void {
-  const sql = `UPDATE subscriptions SET cancelled_at = ? WHERE id = ?`;
-  timedQuery(sql, () => getDb().prepare(sql).run(p.cancelled_at, p.id));
-}
-
-// ─── Trial offers table helpers ───────────────────────────────────────────────
-
-export interface TrialOfferRow {
-  id: number;
-  offer_id: string;
-  scout_wallet: string;
-  player_id: string;
-  details_uri: string;
-  status: 'pending' | 'accepted' | 'rejected';
-  reject_reason: string | null;
-  responded_at: number | null;
-  created_at: number;
-}
-
-/** Insert a new trial offer record. */
-export function insertTrialOffer(p: {
-  offer_id: string;
-  scout_wallet: string;
-  player_id: string;
-  details_uri: string;
-  created_at: number;
-}): void {
-  const sql = `INSERT OR IGNORE INTO trial_offers (offer_id, scout_wallet, player_id, details_uri, status, created_at)
-               VALUES (?, ?, ?, ?, 'pending', ?)`;
-  timedQuery(sql, () =>
-    getDb().prepare(sql).run(p.offer_id, p.scout_wallet, p.player_id, p.details_uri, p.created_at)
-  );
-}
-
-/** Fetch a trial offer by its id. */
-export function getTrialOfferById(offerId: string): TrialOfferRow | null {
-  const sql = `SELECT * FROM trial_offers WHERE offer_id = ?`;
-  return timedQuery(sql, () =>
-    (getDb().prepare(sql).get(offerId) as TrialOfferRow | undefined) ?? null
-  );
-}
-
-/** Update a trial offer's status (accept or reject). */
-export function respondToTrialOffer(p: {
-  offer_id: string;
-  status: 'accepted' | 'rejected';
-  reject_reason?: string;
-  responded_at: number;
-}): void {
-  const sql = `UPDATE trial_offers
-               SET status = ?, reject_reason = ?, responded_at = ?
-               WHERE offer_id = ?`;
-  timedQuery(sql, () =>
-    getDb().prepare(sql).run(p.status, p.reject_reason ?? null, p.responded_at, p.offer_id)
-  );
 }

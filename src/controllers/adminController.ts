@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
-import { getEvents, getEventsCount, getLastLedger, setLastLedger } from '../db';
-import { ApiResponse, EventRecord, ContractEventType } from '../types';
+import { getEvents, getLastLedger, setLastLedger, getValidatorStats } from '../db';
+import { ApiResponse, EventRecord } from '../types';
 import { logAuditEvent } from '../services/audit';
 import { withdrawFees as stellarWithdrawFees, FeeWithdrawalError, FeeWithdrawalResult } from '../services/stellar';
 import config from '../config';
@@ -151,6 +151,17 @@ export async function revokeValidator(req: Request, res: Response, next: NextFun
 export async function pauseContract(req: Request, res: Response, next: NextFunction) {
   try {
     const adminWallet = req.account ?? 'unknown';
+    // Check if admin wallet is in allowed admin wallets
+    if (!config.adminWallets.includes(adminWallet)) {
+      res.status(403).json({ success: false, error: 'Insufficient permissions' });
+      return;
+    }
+    // Check threshold for high-value operations
+    if (config.adminThreshold > 1) {
+      // TODO: Implement multi-signature collection and verification
+      res.status(403).json({ success: false, error: 'High-value operation requires multiple admin signatures' });
+      return;
+    }
     logAuditEvent({
       action: 'contract_state_change',
       adminWallet,
@@ -176,6 +187,17 @@ export async function pauseContract(req: Request, res: Response, next: NextFunct
 export async function unpauseContract(req: Request, res: Response, next: NextFunction) {
   try {
     const adminWallet = req.account ?? 'unknown';
+    // Check if admin wallet is in allowed admin wallets
+    if (!config.adminWallets.includes(adminWallet)) {
+      res.status(403).json({ success: false, error: 'Insufficient permissions' });
+      return;
+    }
+    // Check threshold for high-value operations
+    if (config.adminThreshold > 1) {
+      // TODO: Implement multi-signature collection and verification
+      res.status(403).json({ success: false, error: 'High-value operation requires multiple admin signatures' });
+      return;
+    }
     logAuditEvent({
       action: 'contract_state_change',
       adminWallet,
@@ -263,6 +285,17 @@ export async function withdrawFeesController(req: Request, res: Response, next: 
   }
 
   const adminWallet = req.account ?? 'unknown';
+  // Check if admin wallet is in allowed admin wallets
+  if (!config.adminWallets.includes(adminWallet)) {
+    res.status(403).json({ success: false, error: 'Insufficient permissions' });
+    return;
+  }
+  // Check threshold for high-value operations
+  if (config.adminThreshold > 1) {
+    // TODO: Implement multi-signature collection and verification
+    res.status(403).json({ success: false, error: 'High-value operation requires multiple admin signatures' });
+    return;
+  }
   const parsed = withdrawFeesSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -361,6 +394,43 @@ export async function withdrawFeesController(req: Request, res: Response, next: 
 const reindexSchema = z.object({
   fromLedger: z.number().int().min(0),
 });
+
+/**
+ * GET /api/admin/validators/:wallet/stats
+ * Returns validator stats: milestones_approved and milestones_rejected.
+ */
+export async function getValidatorStatsEndpoint(req: Request, res: Response, next: NextFunction) {
+  try {
+    const wallet = req.params.wallet;
+    // Validate wallet address
+    if (!STELLAR_ADDRESS_RE.test(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid validator wallet address' });
+      return;
+    }
+    const stats = getValidatorStats(wallet);
+    if (stats) {
+      res.json({
+        success: true,
+        data: {
+          wallet: stats.wallet,
+          milestones_approved: stats.milestones_approved,
+          milestones_rejected: stats.milestones_rejected
+        }
+      });
+    } else {
+      res.json({
+        success: true,
+        data: {
+          wallet,
+          milestones_approved: 0,
+          milestones_rejected: 0
+        }
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+}
 
 /**
  * POST /api/admin/indexer/reindex
