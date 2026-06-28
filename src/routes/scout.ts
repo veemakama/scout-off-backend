@@ -27,6 +27,8 @@ router.get('/:wallet/subscription', requireRole('scout'), getSubscription);
  *
  * @param wallet {string} - Scout's Stellar public key
  * @body { tier: 'basic' | 'premium', duration: number (1–365 days) }
+ * @header Idempotency-Key {string} - Optional. Ensures safe retries: duplicate keys return
+ *   the cached response for 24 hours without triggering a new on-chain transaction.
  * @response 201 { success: true, data: { transactionId, tier, expiresAt, status } }
  * @response 400 { success: false, error: string } - Invalid tier or duration
  * @response 402 { success: false, error: string } - Insufficient XLM balance

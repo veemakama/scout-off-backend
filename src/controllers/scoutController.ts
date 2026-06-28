@@ -71,7 +71,7 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
   try {
     const { wallet } = req.params;
     if (req.account !== wallet) {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
+      res.status(401).json({ success: false, error: 'Unauthorized', code: ErrorCode.UNAUTHORIZED });
       return;
     }
 
@@ -292,7 +292,7 @@ export async function getUnlockedContacts(req: Request, res: Response, next: Nex
     const { playerId } = req.query as { playerId?: string };
 
     if (req.account !== wallet) {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
+      res.status(401).json({ success: false, error: 'Unauthorized', code: ErrorCode.UNAUTHORIZED });
       return;
     }
 
@@ -322,13 +322,13 @@ export async function unlockContact(req: Request, res: Response, next: NextFunct
   try {
     const { wallet, playerId } = req.params;
     if (!wallet || !playerId) {
-      res.status(400).json({ success: false, error: 'wallet and playerId are required' });
+      res.status(400).json({ success: false, error: 'wallet and playerId are required', code: ErrorCode.VALIDATION_ERROR });
       return;
     }
 
     if (req.account !== wallet) {
       logger.warn(`[scout] action=unlock_contact_denied scout=${wallet} playerId=${playerId} reason=wallet_mismatch`);
-      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
+      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account', code: ErrorCode.WALLET_MISMATCH });
       return;
     }
 
@@ -355,13 +355,13 @@ export async function submitTrialOffer(req: Request, res: Response, next: NextFu
 
     if ((req as any).account !== wallet) {
       logger.warn(`[scout] action=log_trial_offer_denied scout=${wallet} playerId=${playerId} reason=wallet_mismatch`);
-      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
+      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account', code: ErrorCode.WALLET_MISMATCH });
       return;
     }
 
     const playerExists = getEvents('player_registered').some((e) => e.payload.player_id === playerId);
     if (!playerExists) {
-      res.status(404).json({ success: false, error: 'Player not found' });
+      res.status(404).json({ success: false, error: 'Player not found', code: ErrorCode.PLAYER_NOT_FOUND });
       return;
     }
 
@@ -370,6 +370,7 @@ export async function submitTrialOffer(req: Request, res: Response, next: NextFu
       res.status(402).json({
         success: false,
         error: 'Scout must be subscribed or have paid the contact fee for this player',
+        code: ErrorCode.SUBSCRIPTION_REQUIRED,
       });
       return;
     }
