@@ -158,3 +158,40 @@ describe('PUT /api/players/:playerId — role enforcement', () => {
     expect(res.body.success).toBe(false);
   });
 });
+
+// ─── PUT /api/players/:playerId — owner-only enforcement ──────────────────────
+
+describe('PUT /api/players/:playerId — owner-only enforcement', () => {
+  const OWNER_WALLET = PLAYER_WALLET;
+  const OTHER_WALLET = 'G' + 'B'.repeat(55);
+  const VALID_UPDATE = { metadataUri: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG' };
+
+  it('returns 401 when request is unauthenticated', async () => {
+    const res = await request(app)
+      .put(`/api/players/${OWNER_WALLET}`)
+      .send(VALID_UPDATE);
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('returns 200 when owner updates their own profile', async () => {
+    const token = makeToken(OWNER_WALLET, 'player');
+    const res = await request(app)
+      .put(`/api/players/${OWNER_WALLET}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(VALID_UPDATE);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toBeDefined();
+  });
+
+  it('returns 403 when an authenticated player updates a different player\'s profile', async () => {
+    const token = makeToken(OTHER_WALLET, 'player');
+    const res = await request(app)
+      .put(`/api/players/${OWNER_WALLET}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(VALID_UPDATE);
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
+});

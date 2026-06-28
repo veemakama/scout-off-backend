@@ -78,3 +78,59 @@ describe('config NODE_ENV toggles', () => {
     await expect(import('../src/config')).rejects.toThrow('Invalid NODE_ENV');
   });
 });
+
+describe('config required env vars', () => {
+  const savedContractId = process.env.CONTRACT_ID;
+  const savedJwtSecret = process.env.JWT_SECRET;
+  const savedNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    process.env.CONTRACT_ID = savedContractId;
+    process.env.JWT_SECRET = savedJwtSecret;
+    process.env.NODE_ENV = savedNodeEnv;
+    jest.resetModules();
+  });
+
+  it('throws mentioning CONTRACT_ID when CONTRACT_ID is not set', async () => {
+    delete process.env.CONTRACT_ID;
+    jest.resetModules();
+    await expect(import('../src/config')).rejects.toThrow('CONTRACT_ID');
+  });
+
+  it('throws mentioning JWT_SECRET when JWT_SECRET is not set', async () => {
+    delete process.env.JWT_SECRET;
+    jest.resetModules();
+    await expect(import('../src/config')).rejects.toThrow('JWT_SECRET');
+  });
+
+  it('error message clearly identifies the missing CONTRACT_ID variable', async () => {
+    delete process.env.CONTRACT_ID;
+    jest.resetModules();
+    let message = '';
+    try {
+      await import('../src/config');
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain('CONTRACT_ID');
+  });
+
+  it('error message clearly identifies the missing JWT_SECRET variable', async () => {
+    delete process.env.JWT_SECRET;
+    jest.resetModules();
+    let message = '';
+    try {
+      await import('../src/config');
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain('JWT_SECRET');
+  });
+
+  it('does not throw when both CONTRACT_ID and JWT_SECRET are present', async () => {
+    process.env.CONTRACT_ID = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+    process.env.JWT_SECRET = 'test-secret';
+    jest.resetModules();
+    await expect(import('../src/config')).resolves.toBeDefined();
+  });
+});
