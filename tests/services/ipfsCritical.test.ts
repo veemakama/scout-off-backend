@@ -5,6 +5,7 @@ jest.mock('../../src/config', () => ({
     pinata: { apiKey: 'test-key', secret: 'test-secret', gateway: 'https://gateway.pinata.cloud' },
     logLevel: 'warn',
     nodeEnv: 'test',
+    ipfsPinCacheTtlMs: 300000,
   },
 }));
 
@@ -63,5 +64,45 @@ describe('pinJson IPFS failure handling (#346)', () => {
     expect(cid).toBe('QmSuccess');
     expect(mockCritical).not.toHaveBeenCalled();
     expect(insertPendingPin).not.toHaveBeenCalled();
+  });
+});
+
+describe('pinJson dedup caching', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns cached CID and does not call Pinata twice for identical metadata within TTL', async () => {
+    mockedPost.mockResolvedValue({ data: { IpfsHash: 'QmDedup' } });
+    const body = { wallet: 'Gdedup', position: 'goalkeeper' };
+    const cid1 = await pinJson(body);
+    const cid2 = await pinJson(body);
+    expect(mockedPost).toHaveBeenCalledTimes(1);
+    expect(cid1).toBe('QmDedup');
+    expect(cid2).toBe('QmDedup');
+  });
+
+  it('calls Pinata again for different metadata', async () => {
+    mockedPost
+      .mockResolvedValueOnce({ data: { IpfsHash: 'QmFirst' } })
+      .mockResolvedValueOnce({ data: { IpfsHash: 'QmSecond' } });
+    const cid1 = await pinJson({ wallet: 'Ga', position: 'forward' });
+    const cid2 = await pinJson({ wallet: 'Gb', position: 'defender' });
+    expect(mockedPost).toHaveBeenCalledTimes(2);
+    expect(cid1).toBe('QmFirst');
+    expect(cid2).toBe('QmSecond');
+  });
+
+  it('calls Pinata again after the TTL window expires', async () => {
+    jest.useFakeTimers();
+    mockedPost
+      .mockResolvedValueOnce({ data: { IpfsHash: 'QmBefore' } })
+      .mockResolvedValueOnce({ data: { IpfsHash: 'QmAfter' } });
+    const body = { wallet: 'Gttl', position: 'midfielder' };
+    const cid1 = await pinJson(body);
+    jest.advanceTimersByTime(300001);
+    const cid2 = await pinJson(body);
+    expect(mockedPost).toHaveBeenCalledTimes(2);
+    expect(cid1).toBe('QmBefore');
+    expect(cid2).toBe('QmAfter');
+    jest.useRealTimers();
   });
 });
