@@ -10,8 +10,41 @@ import {
   scValToNative,
 } from '@stellar/stellar-sdk';
 import config from '../config';
+import http from 'http';
+import https from 'https';
+import { logger } from '../utils/logger';
 
-const server = new SorobanRpc.Server(config.sorobanRpcUrl);
+// Configure HTTP keepalive agents for connection reuse
+const httpAgent = new http.Agent({ 
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
+
+const httpsAgent = new https.Agent({ 
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
+
+const server = new SorobanRpc.Server(config.sorobanRpcUrl, {
+  allowHttp: config.sorobanRpcUrl.startsWith('http://'),
+});
+
+// Configure the HTTP client to use keepalive agents
+// The SDK version 12.1.0 uses axios internally
+if (server.httpClient && typeof (server.httpClient as any).defaults === 'object') {
+  (server.httpClient as any).defaults.httpAgent = httpAgent;
+  (server.httpClient as any).defaults.httpsAgent = httpsAgent;
+  
+  // Log keepalive configuration for verification
+  if (config.nodeEnv === 'development' || config.nodeEnv === 'test') {
+    logger.info('[SorobanRPC] HTTP keepalive enabled with httpAgent and httpsAgent');
+    logger.info('[SorobanRPC] maxSockets: 50, maxFreeSockets: 10, timeout: 60000ms');
+  }
+}
 
 export { server };
 
@@ -296,6 +329,73 @@ export async function cancelSubscriptionOnChain(
   }
   // TODO: build and submit cancel_subscription Soroban transaction
   return { transactionId: `stub-cancel-txid-${Date.now()}` };
+}
+
+export interface ContractActionResult {
+  transactionId: string;
+}
+
+export class ContractActionError extends Error {
+  constructor(
+    message: string,
+    public readonly code: 'CONTRACT_NOT_PAUSED' | 'CONTRACT_ALREADY_PAUSED' | 'NETWORK_ERROR' | 'UNAUTHORIZED',
+  ) {
+    super(message);
+    this.name = 'ContractActionError';
+  }
+}
+
+/**
+ * Invoke the contract's `unpause()` function via the platform keypair.
+ * Returns the transaction hash on success.
+ * Throws ContractActionError with code 'CONTRACT_NOT_PAUSED' if the simulation
+ * indicates the contract is not currently paused (Soroban error code 10).
+ */
+export async function unpauseContractOnChain(): Promise<ContractActionResult> {
+  const { getPlatformKeypair } = await import('../utils/signer');
+  const keypair = getPlatformKeypair();
+
+  const account = await server.getAccount(keypair.publicKey());
+  const contract = new Contract(config.contractId);
+
+  const tx = new TransactionBuilder(account, {
+    fee: BASE_FEE,
+    networkPassphrase: networkPassphrase(),
+  })
+    .addOperation(contract.call('unpause'))
+    .setTimeout(30)
+    .build();
+
+  const simResult = await server.simulateTransaction(tx);
+  if (SorobanRpc.Api.isSimulationError(simResult)) {
+    const errMsg = simResult.error ?? '';
+    if (errMsg.includes('ContractPaused') || errMsg.includes('contract_paused') || errMsg.includes('#10')) {
+      throw new ContractActionError('Contract is not currently paused', 'CONTRACT_NOT_PAUSED');
+    }
+    throw new ContractActionError(`Simulation failed: ${errMsg}`, 'NETWORK_ERROR');
+  }
+
+  const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build();
+  preparedTx.sign(keypair);
+
+  const sendResult = await server.sendTransaction(preparedTx);
+  if (sendResult.status === 'ERROR') {
+    throw new ContractActionError(`Submit failed: ${sendResult.errorResult}`, 'NETWORK_ERROR');
+  }
+
+  const hash = sendResult.hash;
+
+  let getResult = await server.getTransaction(hash);
+  while (getResult.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
+    await new Promise((r) => setTimeout(r, 1000));
+    getResult = await server.getTransaction(hash);
+  }
+
+  if (getResult.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+    throw new ContractActionError('Transaction failed on-chain', 'NETWORK_ERROR');
+  }
+
+  return { transactionId: hash };
 }
 
 export interface UpdateProfileResult {

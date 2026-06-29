@@ -1,11 +1,22 @@
 import { Router } from 'express';
-import { getSubscription, getUnlockedContacts, getContactDetails, unlockContact, getPaymentHistory, subscribe, cancelSubscription, submitTrialOffer, trialOfferSchema } from '../controllers/scoutController';
+import { getSubscription, getUnlockedContacts, getContactDetails, unlockContact, getPaymentHistory, subscribe, cancelSubscription, submitTrialOffer, trialOfferSchema, unlockContactSchema } from '../controllers/scoutController';
 import { getScoutRecommendations } from '../controllers/scoutRecommendationsController';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { walletRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
+
+const walletParams = z.object({
+  wallet: z.string().refine(isValidStellarAddress, {
+    message: 'Invalid Stellar address',
+  }),
+});
+
+const walletAndPlayerParams = z.object({
+  wallet: walletParams.shape.wallet,
+  playerId: playerIdSchema,
+});
 
 /**
  * GET /api/scouts/:wallet/subscription
@@ -81,6 +92,7 @@ router.post(
   "/:wallet/contacts/:playerId/unlock",
   requireRole("scout"),
   walletRateLimit(),
+  validateBody(unlockContactSchema),
   unlockContact,
 );
 

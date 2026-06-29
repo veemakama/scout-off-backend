@@ -1,5 +1,9 @@
 import { server } from './stellar';
 import config from '../config';
+<<<<<<< issue/276-300-304-288
+import { EventRecord, ContractEventType } from '../types';
+import { runMigrations } from './migrations';
+=======
 import {
   getDb,
   getLastLedger,
@@ -36,6 +40,7 @@ export function normalizePayload(payload: Record<string, unknown>): Record<strin
     Object.entries(payload).map(([k, v]) => [camelToSnake(k), v])
   );
 }
+>>>>>>> main
 
 // ─── Deduplication strategy ───────────────────────────────────────────────────
 //
@@ -68,13 +73,27 @@ function onBeforeInsert(_eventId: string): void { /* hook */ }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function onAfterInsert(_eventId: string): void { /* hook */ }
 
+<<<<<<< issue/276-300-304-288
+// ─── DB setup ────────────────────────────────────────────────────────────────
+
+const db = new Database(config.dbPath);
+runMigrations(db);
+
+function getLastLedger(): number {
+  const row = db
+    .prepare('SELECT value FROM indexer_state WHERE key = ?')
+    .get('last_ledger') as { value: string } | undefined;
+  return row ? parseInt(row.value, 10) : 0;
+}
+=======
 // ─── Indexer ──────────────────────────────────────────────────────────────────
 
 export async function indexEvents(): Promise<void> {
   const db = getDb();
   const insert = db.prepare(
-    'INSERT OR IGNORE INTO events (type, ledger, tx_hash, payload) VALUES (?, ?, ?, ?)'
+    'INSERT OR IGNORE INTO events (type, ledger, tx_hash, payload, created_at) VALUES (?, ?, ?, ?, ?)'
   );
+>>>>>>> main
 
   const fromLedger = getLastLedger();
 
@@ -99,8 +118,12 @@ export async function indexEvents(): Promise<void> {
       const type = raw.topic[0]?.value() as string;
       const payload = normalizePayload((raw.value?.value() as unknown as Record<string, unknown>) ?? {});
       const eventId = normalizeEventId(config.contractId, raw.ledger, raw.txHash);
+      // Use ledger close time when available (seconds → ms), otherwise index time.
+      const createdAt = raw.ledgerClosedAt
+        ? new Date(raw.ledgerClosedAt).getTime()
+        : Date.now();
       onBeforeInsert(eventId);
-      insert.run(type, raw.ledger, raw.txHash, JSON.stringify(payload));
+      insert.run(type, raw.ledger, raw.txHash, JSON.stringify(payload), createdAt);
       onAfterInsert(eventId);
 
       if (type === 'milestone_approved') {

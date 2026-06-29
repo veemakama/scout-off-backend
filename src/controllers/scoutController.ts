@@ -1,10 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { getEvents, getPlayerById } from '../db';
-import { submitContactPayment, isSubscribed, purchaseSubscription, PaymentError } from '../services/stellar';
-
+import {
+  getEvents,
+  getPlayerById,
+  getLatestSubscription,
+  insertSubscription,
+  dbRenewSubscription,
+  dbCancelSubscription,
+  insertContactUnlock,
+  getContactUnlocksByScout,
+  hasContactUnlock,
+} from '../db';
+import {
+  submitContactPayment,
+  isSubscribed,
+  purchaseSubscription,
+  PaymentError,
+  renewSubscription as stellarRenewSubscription,
+  logTrialOffer as stellarLogTrialOffer,
+  cancelSubscriptionOnChain,
+} from '../services/stellar';
 import { logger } from '../utils/logger';
 import config from '../config';
+import { ErrorCode } from '../utils/errorCodes';
 
 // ─── Validation schemas ────────────────────────────────────────────────────────
 
@@ -19,6 +37,14 @@ export const trialOfferSchema = z.object({
     .min(1)
     .refine(isValidEvidenceUri, 'detailsUri must be a valid IPFS (ipfs://) or HTTPS URI'),
 });
+
+/**
+ * Body schema for POST /scouts/:wallet/contacts/:playerId/unlock.
+ * Currently the unlock operation only uses URL params (wallet, playerId),
+ * so the body is intentionally empty. Defining it explicitly ensures
+ * unexpected fields are stripped and the route is ready for future body fields.
+ */
+export const unlockContactSchema = z.object({}).strict();
 
 const subscribeSchema = z.object({
   tier: z.enum(['basic', 'premium']),
@@ -59,10 +85,8 @@ async function scoutHasPlayerAccess(scoutWallet: string, playerId: string): Prom
     if (expiresAt > graceThreshold) return true;
   }
 
-  // 4. Per-player contact_unlocked event
-  return getEvents('contact_unlocked').some(
-    (e) => e.payload.scout === scoutWallet && e.payload.player_id === playerId,
-  );
+  // 4. Dedicated contact_unlocks table
+  return hasContactUnlock(scoutWallet, playerId);
 }
 
 // ─── GET /api/scouts/:wallet/subscription ─────────────────────────────────────
@@ -297,18 +321,18 @@ export async function getUnlockedContacts(req: Request, res: Response, next: Nex
       return;
     }
 
-    let contacts = getEvents('contact_unlocked').filter((e) => e.payload.scout === wallet);
+    let contacts = getContactUnlocksByScout(wallet);
 
     if (playerId) {
-      contacts = contacts.filter((e) => e.payload.player_id === playerId);
+      contacts = contacts.filter((c) => c.player_id === playerId);
     }
 
     res.json({
       success: true,
-      data: contacts.map((e) => ({
-        playerId: e.payload.player_id as string,
+      data: contacts.map((c) => ({
+        playerId: c.player_id,
         contact_status: 'unlocked',
-        unlockedAt: e.payload.unlocked_at as number,
+        unlockedAt: c.unlocked_at,
       })),
     });
   } catch (err) {
@@ -322,6 +346,10 @@ export async function getUnlockedContacts(req: Request, res: Response, next: Nex
 export async function unlockContact(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet, playerId } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     if (!wallet || !playerId) {
       res.status(400).json({ success: false, error: 'wallet and playerId are required', code: ErrorCode.VALIDATION_ERROR });
       return;
@@ -336,6 +364,12 @@ export async function unlockContact(req: Request, res: Response, next: NextFunct
     logger.info(`[scout] action=unlock_contact_attempt scout=${wallet} playerId=${playerId}`);
 
     const result = await submitContactPayment(wallet, playerId);
+    insertContactUnlock({
+      scout_wallet: wallet,
+      player_id: playerId,
+      tx_hash: (result as { txHash?: string }).txHash ?? '',
+      unlocked_at: Math.floor(Date.now() / 1000),
+    });
     res.json({ success: true, data: result });
   } catch (err) {
     if (err instanceof PaymentError) {
@@ -395,6 +429,10 @@ export async function submitTrialOffer(req: Request, res: Response, next: NextFu
 export async function getPaymentHistory(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     const { from, to } = req.query as { from?: string; to?: string };
 
     let payments = getEvents('contact_unlocked')
@@ -436,9 +474,7 @@ export async function getContactDetails(req: Request, res: Response, next: NextF
       return;
     }
 
-    const hasUnlocked = getEvents('contact_unlocked').some(
-      (e) => e.payload.scout === wallet && e.payload.player_id === playerId
-    );
+    const hasUnlocked = hasContactUnlock(wallet, playerId);
 
     if (!hasUnlocked) {
       res.status(403).json({ success: false, error: 'Contact not unlocked' });

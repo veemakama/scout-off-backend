@@ -106,6 +106,7 @@ router.post('/validators/register', requireRole('admin'), registerValidator);
  * @auth Bearer (admin role required)
  */
 router.post('/validators/revoke', requireRole('admin'), revokeValidator);
+router.post('/contract/pause', requireRole('admin'), pauseContract);
 
 /**
  * POST /api/admin/contract/pause
