@@ -51,6 +51,14 @@ const config = {
   },
   platformFeeBps: parseInt(process.env.PLATFORM_FEE_BPS ?? '500', 10),
   platformSecret: process.env.PLATFORM_SECRET ?? '',
+  platformSecretKey: (() => {
+    const isTest = (process.env.NODE_ENV ?? 'development') === 'test';
+    const val = process.env.PLATFORM_SECRET_KEY ?? '';
+    if (!val && !isTest) {
+      throw new Error('PLATFORM_SECRET_KEY is required in non-test environments');
+    }
+    return val;
+  })(),
   dbPath: process.env.DB_PATH ?? 'scout-off.db',
   stellarHealthCheckEnabled: process.env.STELLAR_HEALTH_CHECK !== 'false',
   adminWallet: process.env.ADMIN_WALLET ?? '',

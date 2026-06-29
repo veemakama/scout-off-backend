@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { getEvents, getLastLedger, setLastLedger, getValidatorStats } from '../db';
 import { ApiResponse, EventRecord } from '../types';
 import { logAuditEvent } from '../services/audit';
-import { withdrawFees as stellarWithdrawFees, FeeWithdrawalError, FeeWithdrawalResult } from '../services/stellar';
+import { withdrawFees as stellarWithdrawFees, FeeWithdrawalError, FeeWithdrawalResult, unpauseContractOnChain, ContractActionError } from '../services/stellar';
 import config from '../config';
 import { logger } from '../utils/logger';
 import { ErrorCode } from '../utils/errorCodes';
@@ -214,7 +214,8 @@ export async function pauseContract(req: Request, res: Response, next: NextFunct
 
 /**
  * POST /api/admin/contract/unpause
- * Stub: signals intent to unpause the Soroban contract. Contract-level behavior is simulated.
+ * Invokes unpause() on the Soroban contract via the platform keypair.
+ * Returns 409 if the contract is not currently paused.
  */
 export async function unpauseContract(req: Request, res: Response, next: NextFunction) {
   try {
@@ -237,13 +238,27 @@ export async function unpauseContract(req: Request, res: Response, next: NextFun
       timestamp: new Date().toISOString(),
       contractAction: 'unpause_contract',
     });
-    // NOTE: Contract-level unpause is simulated. Real invocation will call unpause() on the Soroban contract.
+
+    const result = await unpauseContractOnChain();
+
+    logAuditEvent({
+      action: 'contract_state_change',
+      adminWallet,
+      queryParams: { transactionId: result.transactionId, outcome: 'success' },
+      timestamp: new Date().toISOString(),
+      contractAction: 'unpause_contract',
+    });
+
     res.status(202).json({
       success: true,
-      message: 'Contract unpause submitted (simulated)',
-      transactionId: 'stub-unpause-txn-placeholder',
+      message: 'Contract unpaused successfully',
+      transactionId: result.transactionId,
     });
   } catch (err) {
+    if (err instanceof Error && (err as { code?: string }).code === 'CONTRACT_NOT_PAUSED') {
+      res.status(409).json({ success: false, error: 'Contract is not currently paused', code: ErrorCode.CONFLICT });
+      return;
+    }
     next(err);
   }
 }

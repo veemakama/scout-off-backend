@@ -68,6 +68,13 @@ jest.mock('../../src/services/stellar', () => ({
     token: 'XLM',
   }),
   stellarHealth: jest.fn().mockResolvedValue(true),
+  unpauseContractOnChain: jest.fn().mockResolvedValue({ transactionId: 'real-unpause-txid-abc123' }),
+  ContractActionError: class ContractActionError extends Error {
+    constructor(message: string, public readonly code: string) {
+      super(message);
+      this.name = 'ContractActionError';
+    }
+  },
 }));
 
 jest.mock('../../src/services/audit', () => ({
@@ -498,6 +505,25 @@ describe('POST /api/admin/contract/unpause — envelope shape', () => {
     expect(res.body.success).toBe(true);
     expect(typeof res.body.message).toBe('string');
     expect(typeof res.body.transactionId).toBe('string');
+    expect(res.body.transactionId).toBe('real-unpause-txid-abc123');
+  });
+
+  it('returns 409 when contract is not currently paused', async () => {
+    const { unpauseContractOnChain, ContractActionError } = jest.requireMock('../../src/services/stellar') as {
+      unpauseContractOnChain: jest.Mock;
+      ContractActionError: new (msg: string, code: string) => Error & { code: string };
+    };
+    unpauseContractOnChain.mockRejectedValueOnce(
+      new ContractActionError('Contract is not currently paused', 'CONTRACT_NOT_PAUSED'),
+    );
+    const res = await request(app)
+      .post('/api/admin/contract/unpause')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    expect(typeof res.body.error).toBe('string');
+    // restore
+    unpauseContractOnChain.mockResolvedValue({ transactionId: 'real-unpause-txid-abc123' });
   });
 });
 
