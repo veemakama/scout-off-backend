@@ -46,7 +46,16 @@ describe('requireAuth', () => {
   });
 
   it('returns 401 for an expired token', () => {
-    const token = sign({ sub: 'GTEST' }, -1); // already expired
+    const token = sign({ sub: 'GTEST' }, -1);
+    const { req, res, next } = makeReqRes(token);
+    requireAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 for a token with a past exp claim', () => {
+    const pastExp = Math.floor(Date.now() / 1000) - 3600;
+    const token = jwt.sign({ sub: 'GTEST', role: 'player', exp: pastExp }, SECRET);
     const { req, res, next } = makeReqRes(token);
     requireAuth(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
@@ -79,6 +88,15 @@ describe('requireRole', () => {
 
   it('returns 401 for an expired token', () => {
     const token = sign({ sub: 'GTEST', role: 'validator' }, -1);
+    const { req, res, next } = makeReqRes(token);
+    requireRole('validator')(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 for a token with a manually set past exp claim', () => {
+    const pastExp = Math.floor(Date.now() / 1000) - 7200;
+    const token = jwt.sign({ sub: 'GTEST', role: 'validator', exp: pastExp }, SECRET);
     const { req, res, next } = makeReqRes(token);
     requireRole('validator')(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
