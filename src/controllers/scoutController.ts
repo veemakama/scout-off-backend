@@ -1,12 +1,22 @@
 import { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { getEvents } from '../services/indexer';
 import { submitContactPayment, PaymentError } from '../services/stellar';
 import { ApiResponse } from '../types';
+import { isValidStellarAddress } from '../utils/stellarAddress';
+
+export const subscribeSchema = z.object({
+  duration: z.number().int().min(1, 'duration must be at least 1').max(365, 'duration must be at most 365'),
+});
 
 /** GET /api/scouts/:wallet/subscription */
 export async function getSubscription(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     if ((req as any).account !== wallet) {
       res.status(401).json({ success: false, error: 'Unauthorized' });
       return;
@@ -39,6 +49,10 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
 export async function getUnlockedContacts(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     if ((req as any).account !== wallet) {
       res.status(401).json({ success: false, error: 'Unauthorized' });
       return;
@@ -57,10 +71,37 @@ export async function getUnlockedContacts(req: Request, res: Response, next: Nex
   }
 }
 
+export async function subscribeScout(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { wallet } = req.params;
+    const { duration } = req.body as { duration: number };
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
+    if ((req as any).account !== wallet) {
+      res.status(401).json({ success: false, error: 'Unauthorized' });
+      return;
+    }
+
+    const response: ApiResponse<{ wallet: string; duration: number }> = {
+      success: true,
+      data: { wallet, duration },
+    };
+    res.json(response);
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** POST /api/scouts/:wallet/contacts/:playerId/unlock */
 export async function unlockContact(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet, playerId } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     if (!wallet || !playerId) {
       res.status(400).json({ success: false, error: 'wallet and playerId are required' });
       return;
@@ -80,6 +121,10 @@ export async function unlockContact(req: Request, res: Response, next: NextFunct
 export async function getPaymentHistory(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     const { from, to } = req.query as { from?: string; to?: string };
 
     // Derive mock history from indexed contact_unlocked events

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { server } from './stellar';
 import config from '../config';
 import { EventRecord, ContractEventType } from '../types';
+import { runMigrations } from './migrations';
 
 // ─── Deduplication strategy ───────────────────────────────────────────────────
 //
@@ -37,20 +38,7 @@ function onAfterInsert(_eventId: string): void { /* hook */ }
 // ─── DB setup ────────────────────────────────────────────────────────────────
 
 const db = new Database(config.dbPath);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS events (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    type      TEXT NOT NULL,
-    ledger    INTEGER NOT NULL,
-    tx_hash   TEXT NOT NULL UNIQUE,
-    payload   TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS indexer_state (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
+runMigrations(db);
 
 function getLastLedger(): number {
   const row = db

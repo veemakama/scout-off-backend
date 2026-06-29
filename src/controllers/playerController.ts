@@ -1,3 +1,4 @@
+import { Request, Response, NextFunction } from 'express';
 import { sanitizeInput } from '../utils/sanitizer';
 import { z } from 'zod';
 import { pinJson, gatewayUrl } from '../services/ipfs';

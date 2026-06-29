@@ -28,8 +28,8 @@ const config = {
     process.env.HORIZON_URL ?? 'https://horizon-testnet.stellar.org',
   sorobanRpcUrl:
     process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org',
-  contractId: required('CONTRACT_ID'),
-  jwtSecret: required('JWT_SECRET'),
+  contractId: process.env.CONTRACT_ID ?? '',
+  jwtSecret: process.env.JWT_SECRET ?? '',
   pinata: {
     apiKey: process.env.PINATA_API_KEY ?? '',
     secret: process.env.PINATA_SECRET ?? '',
@@ -46,7 +46,6 @@ const config = {
     xFrameOptions: process.env.SECURITY_X_FRAME_OPTIONS ?? 'DENY',
     referrerPolicy: process.env.SECURITY_REFERRER_POLICY ?? 'no-referrer',
   },
-  logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error',
   webhook: {
     enabled: process.env.WEBHOOK_ENABLED === 'true',
     url: process.env.WEBHOOK_URL ?? ''
