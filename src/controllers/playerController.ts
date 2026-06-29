@@ -122,38 +122,31 @@ export async function getPlayer(
 ) {
   try {
     const playerId = sanitizeInput(req.params.playerId);
+    const cacheKey = `players:${playerId}`;
+    const cached = cacheGet<Record<string, unknown>>(cacheKey);
+    if (cached) {
+      res.json({ success: true, data: cached });
+      return;
+    }
     const row = getPlayerById(playerId);
     if (!row) {
       res.status(404).json({ success: false, error: "Player not found", code: ErrorCode.PLAYER_NOT_FOUND });
       return;
     }
     const { tierName, tierDescription } = getTierMeta(row.progress_level);
-
-    const body = {
-      success: true,
-      data: {
-        player_id: row.player_id,
-        wallet: row.wallet,
-        position: row.position,
-        region: row.region,
-        metadataUri: row.metadata_uri,
-        progress_level: row.progress_level,
-        created_at: row.created_at,
-        tierName,
-        tierDescription,
-      },
+    const data = {
+      player_id: row.player_id,
+      wallet: row.wallet,
+      position: row.position,
+      region: row.region,
+      metadataUri: row.metadata_uri,
+      progress_level: row.progress_level,
+      created_at: row.created_at,
+      tierName,
+      tierDescription,
     };
-
-    const etagSource = `${row.player_id}:${row.metadata_uri ?? ''}:${row.progress_level}:${row.created_at ?? ''}`;
-    const etag = `"${crypto.createHash("md5").update(etagSource).digest("hex")}"`;
-    res.set("ETag", etag);
-
-    if (req.headers["if-none-match"] === etag) {
-      res.status(304).end();
-      return;
-    }
-
-    res.json(body);
+    cacheSet(cacheKey, data);
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -272,6 +265,9 @@ export async function updatePlayer(
       changed_at: Date.now(),
       tx_hash: result.transactionId,
     });
+
+    // Bust the single-player cache so the next GET reflects the update.
+    invalidatePlayerCache(playerId);
 
     res.status(200).json({
       success: true,
