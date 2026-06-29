@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config';
 import { JwtPayload } from '../types';
+import { sendUnauthorized, sendForbidden } from '../utils/authError';
+import { logger } from '../utils/logger';
 
 export interface AuthPayload extends jwt.JwtPayload, Partial<JwtPayload> {}
 
@@ -13,26 +15,18 @@ export interface AuthPayload extends jwt.JwtPayload, Partial<JwtPayload> {}
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
-    console.warn({
-      method: req.method,
-      path: req.path,
-      error: 'Missing auth token',
-    });
-    res.status(401).json({ success: false, error: 'Missing auth token' });
+    logger.warn({ method: req.method, path: req.path, error: 'Missing auth token' });
+    sendUnauthorized(res, 'Missing auth token');
     return;
   }
   try {
     const payload = jwt.verify(header.slice(7), config.jwtSecret) as AuthPayload;
-    (req as any).account = payload.sub;
-    (req as any).role = payload.role;
+    req.account = payload.sub;
+    req.role = payload.role;
     next();
   } catch {
-    console.warn({
-      method: req.method,
-      path: req.path,
-      error: 'Invalid or expired token',
-    });
-    res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    logger.warn({ method: req.method, path: req.path, error: 'Invalid or expired token' });
+    sendUnauthorized(res, 'Invalid or expired token');
   }
 }
 
@@ -48,41 +42,53 @@ export function requireRole(role: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
-      console.warn({
-        method: req.method,
-        path: req.path,
-        error: 'Missing auth token',
-        requiredRole: role,
-      });
-      res.status(401).json({ success: false, error: 'Missing auth token' });
+      logger.warn({ method: req.method, path: req.path, error: 'Missing auth token', requiredRole: role });
+      sendUnauthorized(res, 'Missing auth token');
       return;
     }
+
     try {
-      const payload = jwt.verify(header.slice(7), config.jwtSecret) as AuthPayload;
+      const token = header.slice(7);
+      const payload = jwt.verify(token, config.jwtSecret) as AuthPayload;
+
       if (payload.role !== role) {
-        console.warn({
+        logger.warn({
           method: req.method,
           path: req.path,
           error: 'Insufficient permissions',
           requiredRole: role,
           providedRole: payload.role,
         });
-        res.status(403).json({ success: false, error: 'Insufficient permissions' });
+        sendForbidden(res, 'Insufficient permissions', { requiredRole: role, providedRole: payload.role });
         return;
       }
-      (req as any).account = payload.sub;
-      (req as any).role = payload.role;
+
+      req.account = payload.sub;
+      req.role = payload.role;
       next();
     } catch {
-      console.warn({
-        method: req.method,
-        path: req.path,
-        error: 'Invalid or expired token',
-        requiredRole: role,
-      });
-      res.status(401).json({ success: false, error: 'Invalid or expired token' });
+      logger.warn({ method: req.method, path: req.path, error: 'Invalid or expired token', requiredRole: role });
+      sendUnauthorized(res, 'Invalid or expired token');
     }
   };
+}
+
+/**
+ * Middleware that extracts a JWT if present but never blocks unauthenticated requests.
+ * Sets req.account and req.role when a valid Bearer token is found; otherwise no-ops.
+ */
+export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const payload = jwt.verify(header.slice(7), config.jwtSecret) as AuthPayload;
+      (req as any).account = payload.sub;
+      (req as any).role = payload.role;
+    } catch {
+      // Invalid/expired token — treat the request as anonymous
+    }
+  }
+  next();
 }
 
 /**
@@ -98,20 +104,20 @@ export function requireRoles(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, error: 'Missing auth token' });
+      sendUnauthorized(res, 'Missing auth token');
       return;
     }
     try {
       const payload = jwt.verify(header.slice(7), config.jwtSecret) as AuthPayload;
       if (!payload.role || !roles.includes(payload.role)) {
-        res.status(403).json({ success: false, error: 'Insufficient permissions' });
+        sendForbidden(res, 'Insufficient permissions');
         return;
       }
-      (req as any).account = payload.sub;
-      (req as any).role = payload.role;
+      req.account = payload.sub;
+      req.role = payload.role;
       next();
     } catch {
-      res.status(401).json({ success: false, error: 'Invalid or expired token' });
+      sendUnauthorized(res, 'Invalid or expired token');
     }
   };
 }

@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { ZodSchema } from 'zod';
 import { logger } from '../utils/logger';
+import { ErrorCode } from '../utils/errorCodes';
 
 interface ValidationOptions {
   context?: string;
 }
 
 function getCorrelationId(req: Request): string {
-  return String(req.headers['x-correlation-id'] ?? req.headers['correlation-id'] ?? 'none');
+  return String(req.headers?.['x-correlation-id'] ?? req.headers?.['correlation-id'] ?? 'none');
 }
 
 /**
@@ -31,6 +32,8 @@ export function validateBody<T>(schema: ZodSchema<T>, options?: ValidationOption
       res.status(400).json({
         success: false,
         error: result.error.errors[0]?.message ?? 'Invalid request body',
+        code: ErrorCode.VALIDATION_ERROR,
+        correlationId,
       });
       return;
     }
@@ -60,10 +63,13 @@ export function validateQuery<T>(schema: ZodSchema<T>, options?: ValidationOptio
       res.status(400).json({
         success: false,
         error: result.error.errors[0]?.message ?? 'Invalid query parameters',
+        code: ErrorCode.VALIDATION_ERROR,
+        correlationId,
       });
       return;
     }
     // Cast so the controller can read coerced + defaulted values via req.query
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (req as any).query = result.data;
     next();
   };
