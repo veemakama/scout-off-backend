@@ -38,6 +38,7 @@ export function initDb(): void {
       tx_hash   TEXT NOT NULL UNIQUE,
       payload   TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_events_type_ledger ON events (type, ledger);
     CREATE TABLE IF NOT EXISTS indexer_state (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
