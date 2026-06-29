@@ -85,6 +85,15 @@ describe('requireRole', () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('returns 401 for a token with a manually set past exp claim', () => {
+    const pastExp = Math.floor(Date.now() / 1000) - 7200;
+    const token = jwt.sign({ sub: 'GTEST', role: 'validator', exp: pastExp }, SECRET);
+    const { req, res, next } = makeReqRes(token);
+    requireRole('validator')(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
 });
 
 describe('JWT key rotation (#273)', () => {
