@@ -18,6 +18,7 @@ const config = {
     process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org',
   contractId: required('CONTRACT_ID'),
   jwtSecret: required('JWT_SECRET'),
+  platformSecret: process.env.PLATFORM_SECRET ?? '',
   pinata: {
     apiKey: process.env.PINATA_API_KEY ?? '',
     secret: process.env.PINATA_SECRET ?? '',
@@ -35,6 +36,9 @@ const config = {
     enabled: process.env.WEBHOOK_ENABLED === 'true',
     url: process.env.WEBHOOK_URL ?? ''
   },
+  logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error',
+  stellarHealthCheckEnabled: process.env.STELLAR_HEALTH_CHECK_ENABLED !== 'false',
+  adminWallet: process.env.ADMIN_WALLET ?? '',
 };
 
 export default config;
