@@ -32,11 +32,12 @@ export function initDb(): void {
   _db = new Database(config.dbPath);
   _db.exec(`
     CREATE TABLE IF NOT EXISTS events (
-      id        INTEGER PRIMARY KEY AUTOINCREMENT,
-      type      TEXT NOT NULL,
-      ledger    INTEGER NOT NULL,
-      tx_hash   TEXT NOT NULL UNIQUE,
-      payload   TEXT NOT NULL
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      type       TEXT NOT NULL,
+      ledger     INTEGER NOT NULL,
+      tx_hash    TEXT NOT NULL UNIQUE,
+      payload    TEXT NOT NULL,
+      created_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS indexer_state (
       key   TEXT PRIMARY KEY,
@@ -99,6 +100,7 @@ export function setLastLedger(ledger: number): void {
 interface EventRow {
   type: string;
   payload: string;
+  created_at: number | null;
 }
 
 export interface GetEventsOptions {
@@ -135,6 +137,7 @@ export function getEvents(
     type: r.type as ContractEventType,
     payload: JSON.parse(r.payload),
     contractAddress: config.contractId,
+    created_at: r.created_at,
   }));
 }
 
