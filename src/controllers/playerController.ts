@@ -54,6 +54,17 @@ export const filterSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+/**
+ * Returns the first player_registered event payload for the given playerId,
+ * or undefined if no such player exists.
+ */
+export function getPlayerById(playerId: string): Record<string, unknown> | undefined {
+  const events = getEvents('player_registered').filter(
+    (e) => e.payload.player_id === playerId
+  );
+  return events.length ? events[0].payload : undefined;
+}
+
 /** POST /api/players/register */
 export async function registerPlayer(
   req: Request,
@@ -62,6 +73,14 @@ export async function registerPlayer(
 ) {
   try {
     const parsed = registerSchema.parse(req.body);
+
+    // Ensure the wallet in the request body belongs to the authenticated account.
+    // Without this check a player could register a profile under another player's address.
+    if (parsed.wallet !== (req as any).account) {
+      res.status(403).json({ success: false, error: 'wallet must match authenticated account' });
+      return;
+    }
+
     const sanitizedPosition = sanitizeInput(parsed.position);
     const sanitizedRegion = sanitizeInput(parsed.region);
     const metadataUri =

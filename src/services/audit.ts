@@ -3,8 +3,6 @@ import { insertAuditLog } from '../db';
 
 export interface AuditEvent {
   action: string;
-  adminWallet: string;
-  queryParams: Record<string, unknown>;
   timestamp: string;
   /** Optional: contract action name for admin smart contract interactions (e.g. 'pause_contract') */
   contractAction?: string;

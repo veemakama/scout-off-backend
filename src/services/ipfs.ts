@@ -17,9 +17,11 @@
 import { createHash } from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
+import { createHash } from 'crypto';
 import config from '../config';
 import { logger } from '../utils/logger';
 import { insertPendingPin, getPendingPins, deletePendingPin, incrementPendingPinAttempts } from '../db';
+import { cacheGet, cacheSet } from './cache';
 
 const PINATA_PIN_JSON_URL = 'https://api.pinata.cloud/pinning/pinJSONToIPFS';
 const PINATA_PIN_FILE_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
@@ -120,9 +122,18 @@ export async function pinJson(body: object): Promise<string> {
     return devStubCid(JSON.stringify(body));
   }
   try {
+    // Hashing uses plain JSON.stringify (order-sensitive) by design: this deduplicates
+    // the specific case of a client retrying the same literal request body after a
+    // network timeout — not general semantic-equality dedup of differently-ordered objects.
+    const hash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
+    const cached = cacheGet<string>(`ipfs:pin:${hash}`);
+    if (cached !== undefined) return cached;
+
     const res = await axios.post(PINATA_PIN_JSON_URL, body, { headers: pinataHeaders() });
     const cid = res.data.IpfsHash as string;
+
     pinJsonCache.set(hash, { cid, timestamp: Date.now() });
+ main
     return cid;
   } catch (err) {
     logger.critical('[ipfs] Pinata unavailable — queueing payload for retry', (err as Error).message);

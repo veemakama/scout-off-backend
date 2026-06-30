@@ -20,6 +20,20 @@ if (!VALID_ENVS.has(rawNodeEnv)) {
 }
 const nodeEnv = rawNodeEnv as NodeEnv;
 
+// Validate ADMIN_WALLET based on environment:
+// - production: throw immediately so the process never starts without it
+// - staging: emit a console warning (process continues)
+const adminWalletValue = process.env.ADMIN_WALLET ?? '';
+if (!adminWalletValue) {
+  if (nodeEnv === 'production') {
+    throw new Error('ADMIN_WALLET is required in production but is not set. Set the ADMIN_WALLET environment variable to the platform admin Stellar address.');
+  }
+  if (nodeEnv === 'staging') {
+    // eslint-disable-next-line no-console
+    console.warn('[config] WARNING: ADMIN_WALLET is not set in staging. Admin-seeding will be disabled. Set ADMIN_WALLET to suppress this warning.');
+  }
+}
+
 const ENV_LOG_LEVEL: Record<NodeEnv, LogLevel> = {
   development: 'debug',
   test: 'warn',
@@ -39,11 +53,7 @@ const config = {
     process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org',
   contractId: required('CONTRACT_ID'),
   jwtSecret: required('JWT_SECRET'),
-<<<<<<< feat/issue-273-jwt-key-rotation
-  jwtSecretPrevious: process.env.JWT_SECRET_PREVIOUS ?? '',
-=======
   platformSecret: process.env.PLATFORM_SECRET ?? '',
->>>>>>> main
   pinata: {
     apiKey: process.env.PINATA_API_KEY ?? '',
     secret: process.env.PINATA_SECRET ?? '',
@@ -74,6 +84,8 @@ const config = {
     xContentTypeOptions: process.env.SECURITY_X_CONTENT_TYPE_OPTIONS ?? 'nosniff',
     xFrameOptions: process.env.SECURITY_X_FRAME_OPTIONS ?? 'DENY',
     referrerPolicy: process.env.SECURITY_REFERRER_POLICY ?? 'no-referrer',
+    /** Content-Security-Policy value. Override via SECURITY_CSP env var. */
+    csp: process.env.SECURITY_CSP ?? "default-src 'none'",
   },
   webhook: {
     enabled: process.env.WEBHOOK_ENABLED === 'true',
@@ -115,8 +127,10 @@ const config = {
   },
   /** TTL for player list cache entries in milliseconds. */
   playerCacheTtlMs: parseInt(process.env.PLAYER_CACHE_TTL_MS ?? '60000', 10),
+
   /** TTL for pinJson deduplication cache entries in milliseconds (default: 5 min). */
   pinJsonCacheTtlMs: parseInt(process.env.PIN_JSON_CACHE_TTL_MS ?? '300000', 10),
+
 };
 
 export default config;
