@@ -30,6 +30,7 @@ const router = Router();
 router.get('/', validateQuery(filterSchema), filterPlayers);
 router.post(
   '/register',
+  requireAuth,
   validateBody(registerSchema, { context: 'player_registration' }),
   registerPlayer
 );

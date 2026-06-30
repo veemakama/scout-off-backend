@@ -36,8 +36,9 @@ describe('GET /api/players', () => {
 });
 
 describe('POST /api/players/register', () => {
+  const PLAYER_WALLET = 'G'.repeat(56);
   const validPlayer = {
-    wallet: 'G'.repeat(56),
+    wallet: PLAYER_WALLET,
     position: 'striker',
     region: 'europe',
     metadataUri: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG',
@@ -53,13 +54,37 @@ describe('POST /api/players/register', () => {
   });
 
   it('accepts registration payloads with valid metadataUri', async () => {
+    // Use a token whose sub matches the wallet in the body
+    const token = await getPlayerTokenForWallet(PLAYER_WALLET);
     const res = await request(app)
       .post('/api/players/register')
+      .set('Authorization', `Bearer ${token}`)
       .send(validPlayer);
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(res.body.data.metadataUri).toBe(validPlayer.metadataUri);
+  });
+
+  it('returns 403 when req.body.wallet does not match authenticated account', async () => {
+    // Token belongs to a different wallet
+    const token = await getPlayerToken();
+    const res = await request(app)
+      .post('/api/players/register')
+      .set('Authorization', `Bearer ${token}`)
+      .send(validPlayer);
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toMatch(/wallet must match authenticated account/i);
+  });
+
+  it('returns 401 when no token is provided', async () => {
+    const res = await request(app)
+      .post('/api/players/register')
+      .send(validPlayer);
+
+    expect(res.status).toBe(401);
   });
 });
 
@@ -183,6 +208,16 @@ async function getPlayerToken(): Promise<string> {
     .post('/auth/token')
     .send({ transaction: tx.toXDR(), role: 'player' });
   return tokenRes.body.token;
+}
+
+/**
+ * Returns a JWT whose sub is exactly `wallet`, so the token matches a specific wallet address.
+ * Used to test ownership checks in /api/players/register.
+ */
+async function getPlayerTokenForWallet(wallet: string): Promise<string> {
+  const jwt = await import('jsonwebtoken');
+  const secret = process.env.JWT_SECRET ?? 'test-secret';
+  return (jwt as any).default.sign({ sub: wallet, role: 'player' }, secret, { expiresIn: '1h' });
 }
 
 async function getAdminToken(): Promise<string> {
