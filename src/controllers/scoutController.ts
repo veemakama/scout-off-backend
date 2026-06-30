@@ -1,7 +1,34 @@
 import { Request, Response, NextFunction } from 'express';
 import { getEvents } from '../services/indexer';
 import { submitContactPayment, PaymentError } from '../services/stellar';
-import { ApiResponse } from '../types';
+import { ApiResponse, SubscriptionTier, SubscriptionStatus } from '../types';
+
+/**
+ * Derive the current subscription status for a scout wallet from indexed events.
+ * Returns a SubscriptionStatus whose `tier` is null when there is no subscription,
+ * and the actual on-chain tier (defaulting to 'basic' only when the event payload
+ * carries no tier field) when one exists.
+ */
+export function isSubscribed(wallet: string): SubscriptionStatus {
+  const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === wallet);
+  const latest = subs.at(-1);
+
+  if (!latest) {
+    return { active: false, tier: null, expiresAt: null, remainingDays: 0 };
+  }
+
+  const expiresAt = latest.payload.subscriptionExpiry as number;
+  const now = Math.floor(Date.now() / 1000);
+  const active = expiresAt > now;
+  const remainingDays = active ? Math.ceil((expiresAt - now) / 86400) : 0;
+
+  // Use the tier recorded in the on-chain event; fall back to 'basic' only when
+  // the event payload contains no tier field at all (legacy events).
+  const rawTier = latest.payload.tier as string | undefined;
+  const tier: SubscriptionTier = (rawTier as SubscriptionTier) ?? 'basic';
+
+  return { active, tier, expiresAt, remainingDays };
+}
 
 /** GET /api/scouts/:wallet/subscription */
 export async function getSubscription(req: Request, res: Response, next: NextFunction) {
@@ -11,25 +38,8 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
       res.status(401).json({ success: false, error: 'Unauthorized' });
       return;
     }
-    const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === wallet);
-    const latest = subs.at(-1);
-    if (!latest) {
-      res.json({ success: true, data: { active: false, tier: null, expiresAt: null, remainingDays: 0 } });
-      return;
-    }
-    const expiresAt = latest.payload.subscriptionExpiry as number;
-    const now = Math.floor(Date.now() / 1000);
-    const active = expiresAt > now;
-    const remainingDays = active ? Math.ceil((expiresAt - now) / 86400) : 0;
-    res.json({
-      success: true,
-      data: {
-        active,
-        tier: (latest.payload.tier as string) ?? 'basic',
-        expiresAt,
-        remainingDays,
-      },
-    });
+    const status = isSubscribed(wallet);
+    res.json({ success: true, data: status });
   } catch (err) {
     next(err);
   }
