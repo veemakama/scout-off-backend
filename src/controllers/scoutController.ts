@@ -1,13 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { getEvents, getPlayerById } from '../db';
-import { submitContactPayment, isSubscribed, purchaseSubscription, PaymentError } from '../services/stellar';
+import { submitContactPayment, purchaseSubscription, PaymentError } from '../services/stellar';
 import { logger } from '../utils/logger';
 import { isValidEvidenceUri } from './validatorController';
-
-function isValidEvidenceUri(uri: string): boolean {
-  return uri.startsWith('ipfs://') || uri.startsWith('https://');
-}
+import { PaymentHistoryItem } from '../types';
+import { getActiveSubscription } from '../utils/subscription';
 
 async function logTrialOffer(scoutWallet: string, playerId: string, detailsUri: string) {
   // TODO: invoke log_trial_offer on the Soroban contract
@@ -19,20 +17,20 @@ export const trialOfferSchema = z.object({
   detailsUri: z.string().min(1).refine(isValidEvidenceUri, 'detailsUri must be a valid IPFS (ipfs://) or HTTPS URI'),
 });
 
+const subscribeSchema = z.object({
+  tier: z.enum(['basic', 'premium']),
+  duration: z.number().int().min(1).max(365),
+});
+
 /**
  * Returns true if the scout currently has paid access to the player —
  * either an active subscription or a previously unlocked contact.
+ *
+ * Uses the shared getActiveSubscription utility for the subscription check.
  */
 async function scoutHasPlayerAccess(scoutWallet: string, playerId: string): Promise<boolean> {
-  const onChain = await isSubscribed(scoutWallet);
-  if (onChain.active) return true;
-
-  const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === scoutWallet);
-  const latestSub = subs.at(-1);
-  if (latestSub) {
-    const expiresAt = latestSub.payload.subscription_expiry as number;
-    if (expiresAt > Math.floor(Date.now() / 1000)) return true;
-  }
+  const sub = await getActiveSubscription(scoutWallet);
+  if (sub.active) return true;
 
   return getEvents('contact_unlocked').some(
     (e) => e.payload.scout === scoutWallet && e.payload.player_id === playerId
@@ -48,29 +46,26 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
       return;
     }
 
-    // On-chain verification stub — falls back to indexed events when stub returns inactive
-    const onChain = await isSubscribed(wallet);
-    if (onChain.active) {
-      res.json({ success: true, data: { active: true, tier: 'basic', expiresAt: onChain.expiresAt, remainingDays: null } });
-      return;
-    }
+    const sub = await getActiveSubscription(wallet);
 
-    const subs = getEvents('scout_subscribed').filter((e) => e.payload.scout === wallet);
-    const latest = subs.at(-1);
-    if (!latest) {
+    if (!sub.expiresAt && !sub.active) {
+      // No subscription record found at all
       res.json({ success: true, data: { active: false, tier: null, expiresAt: null, remainingDays: 0 } });
       return;
     }
-    const expiresAt = latest.payload.subscription_expiry as number;
+
     const now = Math.floor(Date.now() / 1000);
-    const active = expiresAt > now;
-    const remainingDays = active ? Math.ceil((expiresAt - now) / 86400) : 0;
+    const remainingDays =
+      sub.active && sub.expiresAt != null
+        ? Math.ceil((sub.expiresAt - now) / 86400)
+        : 0;
+
     res.json({
       success: true,
       data: {
-        active,
-        tier: (latest.payload.tier as string) ?? 'basic',
-        expiresAt,
+        active: sub.active,
+        tier: sub.tier,
+        expiresAt: sub.expiresAt,
         remainingDays,
       },
     });
@@ -142,19 +137,17 @@ export async function unlockContact(req: Request, res: Response, next: NextFunct
 export async function subscribe(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
-    const { tier, duration } = req.body as { tier?: 'basic' | 'premium'; duration?: number };
-
-    if ((req as any).account !== wallet) {
+    if (req.account !== wallet) {
       logger.warn(`[scout] action=subscribe_denied scout=${wallet} reason=wallet_mismatch`);
       res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
       return;
     }
-
-    if (!tier || !duration || !['basic', 'premium'].includes(tier) || duration < 1 || duration > 365) {
-      res.status(400).json({ success: false, error: 'tier must be basic or premium and duration must be between 1 and 365' });
+    const parsed = subscribeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.errors[0]?.message ?? 'Invalid request body' });
       return;
     }
-
+    const { tier, duration } = parsed.data;
     const result = await purchaseSubscription(wallet, tier, duration);
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -172,7 +165,7 @@ export async function submitTrialOffer(req: Request, res: Response, next: NextFu
     const { wallet } = req.params;
     const { playerId, detailsUri } = req.body as { playerId: string; detailsUri: string };
 
-    if ((req as any).account !== wallet) {
+    if (req.account !== wallet) {
       logger.warn(`[scout] action=log_trial_offer_denied scout=${wallet} playerId=${playerId} reason=wallet_mismatch`);
       res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
       return;
@@ -206,17 +199,19 @@ export async function submitTrialOffer(req: Request, res: Response, next: NextFu
   }
 }
 
-/** GET /api/scouts/:wallet/payments — placeholder payment history */
+/** GET /api/scouts/:wallet/payments — payment history derived from indexed events */
 export async function getPaymentHistory(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
     const { from, to } = req.query as { from?: string; to?: string };
 
-    // Derive mock history from indexed contact_unlocked events
-    let payments = getEvents('contact_unlocked')
+    // Derive payment history from indexed contact_unlocked events.
+    // When tx_hash is absent from the event payload, transactionId is null
+    // rather than fabricating a mock identifier.
+    let payments: PaymentHistoryItem[] = getEvents('contact_unlocked')
       .filter((e) => e.payload.scout === wallet)
-      .map((e, i) => ({
-        transactionId: (e.payload.tx_hash ?? `mock-tx-${i}`) as string,
+      .map((e) => ({
+        transactionId: (e.payload.tx_hash as string | undefined) ?? null,
         amount: (e.payload.fee ?? '0') as string,
         token: 'XLM',
         timestamp: (e.payload.timestamp ?? new Date(0).toISOString()) as string,
@@ -233,36 +228,6 @@ export async function getPaymentHistory(req: Request, res: Response, next: NextF
 
     res.json({ success: true, data: payments });
   } catch (err) {
-    next(err);
-  }
-}
-
-const subscribeSchema = z.object({
-  tier: z.enum(['basic', 'premium']),
-  duration: z.number().int().min(1).max(365),
-});
-
-/** POST /api/scouts/:wallet/subscribe */
-export async function subscribe(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { wallet } = req.params;
-    if (req.account !== wallet) {
-      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
-      return;
-    }
-    const parsed = subscribeSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: parsed.error.errors[0]?.message ?? 'Invalid request body' });
-      return;
-    }
-    const { tier, duration } = parsed.data;
-    const result = await purchaseSubscription(wallet, tier, duration);
-    res.status(201).json({ success: true, data: result });
-  } catch (err) {
-    if (err instanceof PaymentError) {
-      res.status(402).json({ success: false, error: err.message, code: err.code });
-      return;
-    }
     next(err);
   }
 }
@@ -304,4 +269,3 @@ export async function getContactDetails(req: Request, res: Response, next: NextF
     next(err);
   }
 }
-
