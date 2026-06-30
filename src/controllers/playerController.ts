@@ -73,6 +73,14 @@ export async function registerPlayer(
 ) {
   try {
     const parsed = registerSchema.parse(req.body);
+
+    // Ensure the wallet in the request body belongs to the authenticated account.
+    // Without this check a player could register a profile under another player's address.
+    if (parsed.wallet !== (req as any).account) {
+      res.status(403).json({ success: false, error: 'wallet must match authenticated account' });
+      return;
+    }
+
     const sanitizedPosition = sanitizeInput(parsed.position);
     const sanitizedRegion = sanitizeInput(parsed.region);
     const metadataUri =
