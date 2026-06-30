@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import { getEvents } from '../services/indexer';
 import { AdminEvent, FeeHistoryItem, ApiResponse } from '../types';
 import config from '../config';
@@ -22,12 +22,6 @@ export async function getStats(req: Request, res: Response, next: NextFunction) 
     next(err);
   }
 }
-
-const eventsQuerySchema = z.object({
-  eventType: z.string().optional(),
-  startDate: z.coerce.number().optional(),
-  endDate: z.coerce.number().optional(),
-});
 
 /** GET /api/admin/events */
 export async function getAllEvents(req: Request, res: Response, next: NextFunction) {
@@ -98,28 +92,21 @@ export async function revokeValidator(req: Request, res: Response, next: NextFun
   }
 }
 
-const introspectSchema = z.object({
-  token: z.string().min(1, 'token is required'),
-});
-
 /** POST /api/admin/introspect */
 export async function introspectToken(req: Request, res: Response, next: NextFunction) {
   try {
-    const parsed = introspectSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: parsed.error.errors[0].message });
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Missing auth token' });
       return;
     }
-
-    let payload: jwt.JwtPayload;
-    try {
-      payload = jwt.verify(parsed.data.token, config.jwtSecret) as jwt.JwtPayload;
-    } catch {
-      res.status(400).json({ success: false, error: 'Invalid or expired token' });
+    const token = header.slice(7);
+    // Token already verified by requireRole middleware; just decode for payload
+    const payload = jwt.decode(token) as jwt.JwtPayload;
+    if (!payload) {
+      res.status(401).json({ success: false, error: 'Invalid token' });
       return;
     }
-
-    // Return only non-secret metadata fields
     res.json({
       success: true,
       data: {
