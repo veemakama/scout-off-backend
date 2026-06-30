@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../../src/middleware/auth';
 import * as auditService from '../../src/services/audit';
 
 const SECRET = 'test-secret';
+const PREV_SECRET = 'old-test-secret';
 process.env.JWT_SECRET = SECRET;
 process.env.CONTRACT_ID = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
 
@@ -21,8 +22,8 @@ function makeReqRes(token?: string, path = '/test') {
   return { req, res, next };
 }
 
-function sign(payload: object, expiresIn: string | number = '1h') {
-  return jwt.sign(payload, SECRET, { expiresIn } as jwt.SignOptions);
+function sign(payload: object, secret = SECRET, expiresIn: string | number = '1h') {
+  return jwt.sign(payload, secret, { expiresIn } as jwt.SignOptions);
 }
 
 describe('requireAuth', () => {
@@ -31,7 +32,7 @@ describe('requireAuth', () => {
     const { req, res, next } = makeReqRes(token);
     requireAuth(req, res, next);
     expect(next).toHaveBeenCalledTimes(1);
-    expect((req as any).account).toBe('GTEST');
+    expect(req.account).toBe('GTEST');
   });
 
   it('returns 401 when Authorization header is missing', () => {
@@ -49,7 +50,7 @@ describe('requireAuth', () => {
   });
 
   it('returns 401 for an expired token', () => {
-    const token = sign({ sub: 'GTEST' }, -1); // already expired
+    const token = sign({ sub: 'GTEST' }, SECRET, -1); // already expired
     const { req, res, next } = makeReqRes(token);
     requireAuth(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
@@ -114,7 +115,16 @@ describe('requireRole', () => {
   });
 
   it('returns 401 for an expired token', () => {
-    const token = sign({ sub: 'GTEST', role: 'validator' }, -1);
+    const token = sign({ sub: 'GTEST', role: 'validator' }, SECRET, -1);
+    const { req, res, next } = makeReqRes(token);
+    requireRole('validator')(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 for a token with a manually set past exp claim', () => {
+    const pastExp = Math.floor(Date.now() / 1000) - 7200;
+    const token = jwt.sign({ sub: 'GTEST', role: 'validator', exp: pastExp }, SECRET);
     const { req, res, next } = makeReqRes(token);
     requireRole('validator')(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
@@ -149,5 +159,42 @@ describe('requireRole', () => {
       })
     );
     spy.mockRestore();
+  });
+});
+
+describe('JWT key rotation (#273)', () => {
+  afterEach(() => {
+    delete process.env.JWT_SECRET_PREVIOUS;
+    // Reset the config module so jwtSecretPrevious is re-read
+    jest.resetModules();
+  });
+
+  it('accepts a token signed with the current JWT_SECRET', () => {
+    const token = sign({ sub: 'GTEST', role: 'player' }, SECRET);
+    const { req, res, next } = makeReqRes(token);
+    requireAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a token signed with JWT_SECRET_PREVIOUS during rotation window', () => {
+    process.env.JWT_SECRET_PREVIOUS = PREV_SECRET;
+    // Re-import to pick up the new env value
+    jest.resetModules();
+    const { requireAuth: requireAuthFresh } = require('../../src/middleware/auth');
+    const token = jwt.sign({ sub: 'GTEST', role: 'player' }, PREV_SECRET, { expiresIn: '1h' });
+    const { req, res, next } = makeReqRes(token);
+    requireAuthFresh(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 401 for a token signed with an unknown secret', () => {
+    process.env.JWT_SECRET_PREVIOUS = PREV_SECRET;
+    jest.resetModules();
+    const { requireAuth: requireAuthFresh } = require('../../src/middleware/auth');
+    const token = jwt.sign({ sub: 'GTEST', role: 'player' }, 'completely-unknown-secret', { expiresIn: '1h' });
+    const { req, res, next } = makeReqRes(token);
+    requireAuthFresh(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
   });
 });
