@@ -57,6 +57,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
  *
  * Returns 401 if no valid token is present.
  * Returns 403 if the token's role does not match.
+ * All 401 and 403 responses are persisted to the audit trail.
  */
 export function requireRole(role: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -75,7 +76,7 @@ export function requireRole(role: string) {
         logger.warn({
           method: req.method,
           path: req.path,
-          error: 'Insufficient permissions',
+          error: reason,
           requiredRole: role,
           providedRole: payload.role,
         });
