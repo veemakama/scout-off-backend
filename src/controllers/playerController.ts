@@ -1,10 +1,11 @@
-import { sanitizeInput } from '../utils/sanitizer';
+import { Request, Response, NextFunction } from 'express';
 import { sanitizeInput } from '../utils/sanitizer';
 import { z } from 'zod';
 import { pinJson, gatewayUrl } from '../services/ipfs';
 import { getEvents } from '../services/indexer';
 import { invalidatePlayerCache } from '../services/cache';
-import { ApiResponse } from '../types';
+import { ApiResponse, ProgressLevel } from '../types';
+import { getTierMeta } from '../utils/tier';
 
 export const registerSchema = z.object({
   wallet: z.string().min(56).max(56),
@@ -20,6 +21,17 @@ export const filterSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+/**
+ * Returns the first player_registered event payload for the given playerId,
+ * or undefined if no such player exists.
+ */
+export function getPlayerById(playerId: string): Record<string, unknown> | undefined {
+  const events = getEvents('player_registered').filter(
+    (e) => e.payload.player_id === playerId
+  );
+  return events.length ? events[0].payload : undefined;
+}
 
 /** POST /api/players/register */
 export async function registerPlayer(req: Request, res: Response, next: NextFunction) {
@@ -44,17 +56,14 @@ export async function registerPlayer(req: Request, res: Response, next: NextFunc
 export async function getPlayer(req: Request, res: Response, next: NextFunction) {
   try {
     const playerId = sanitizeInput(req.params.playerId);
-    const events = getEvents('player_registered').filter(
-      (e) => e.payload.player_id === playerId
-    );
-    if (!events.length) {
+    const playerPayload = getPlayerById(playerId);
+    if (!playerPayload) {
       res.status(404).json({ success: false, error: 'Player not found' });
       return;
     }
-    const payload = events[0].payload;
-    const level = (Number(payload.progress_level ?? 0) as ProgressLevel);
+    const level = (Number(playerPayload.progress_level ?? 0) as ProgressLevel);
     const { tierName, tierDescription } = getTierMeta(level);
-    res.json({ success: true, data: { ...payload, tierName, tierDescription } });
+    res.json({ success: true, data: { ...playerPayload, tierName, tierDescription } });
   } catch (err) {
     next(err);
   }
@@ -81,8 +90,17 @@ export async function filterPlayers(req: Request, res: Response, next: NextFunct
 /** GET /api/players/:playerId/milestones */
 export async function getPlayerMilestones(req: Request, res: Response, next: NextFunction) {
   try {
+    const playerId = sanitizeInput(req.params.playerId);
+
+    // Return 404 for a non-existent player so callers can distinguish
+    // "player has no milestones yet" (200, data: []) from "player doesn't exist" (404).
+    if (!getPlayerById(playerId)) {
+      res.status(404).json({ success: false, error: 'Player not found' });
+      return;
+    }
+
     const milestones = getEvents('milestone_approved').filter(
-      (e) => e.payload.player_id === req.params.playerId
+      (e) => e.payload.player_id === playerId
     );
     res.json({ success: true, data: milestones });
   } catch (err) {
