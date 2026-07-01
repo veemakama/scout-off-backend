@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { extractClientIp } from '../utils/ipExtractor';
+import { logger } from '../utils/logger';
 
 /**
  * Convert a dotted-decimal IPv4 string to an unsigned 32-bit integer.
@@ -64,12 +65,7 @@ export function ipAllowlistMiddleware(req: Request, res: Response, next: NextFun
   const allowed = allowlist.some((entry) => ipInCidr(clientIp, entry));
 
   if (!allowed) {
-    console.warn({
-      method: req.method,
-      path: req.path,
-      clientIp,
-      error: 'IP not in allowlist',
-    });
+    logger.warn({ method: req.method, path: req.path, clientIp, error: 'IP not in allowlist' });
     res.status(403).json({ success: false, error: 'Forbidden: IP not in allowlist' });
     return;
   }

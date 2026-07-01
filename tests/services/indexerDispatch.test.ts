@@ -11,6 +11,7 @@ jest.mock('../../src/services/webhooks', () => ({
   dispatchEventWebhook: jest.fn().mockResolvedValue(undefined),
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { server } = require('../../src/services/stellar') as { server: { getEvents: jest.Mock } };
 const mockedDispatch = dispatchEventWebhook as jest.MockedFunction<typeof dispatchEventWebhook>;
 
@@ -75,6 +76,7 @@ describe('indexEvents — milestone_approved webhook dispatch', () => {
   });
 
   it('logs a warning and continues when the webhook dispatch fails', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const warnSpy = jest.spyOn(require('../../src/utils/logger').logger, 'warn').mockImplementation(() => {});
     mockedDispatch.mockRejectedValueOnce(new Error('endpoint unreachable'));
 

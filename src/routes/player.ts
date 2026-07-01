@@ -24,8 +24,6 @@ import { requireOwner } from "../middleware/requireOwner";
 
 const router = Router();
 
-const playerIdParams = z.object({ playerId: playerIdSchema });
-
 /**
  * GET /api/players
  * optionalAuth so req.account is set when a Bearer token is present (for audit logging)
@@ -58,7 +56,7 @@ router.put(
 router.get(
   "/:playerId/history",
   (req: Request, res: Response, next: NextFunction) => {
-    if ((req as any).role === "admin") {
+    if (req.role === "admin") {
       return getPlayerHistory(req, res, next);
     }
     return requireRole("player")(req, res, () => requireOwner(req, res, next));

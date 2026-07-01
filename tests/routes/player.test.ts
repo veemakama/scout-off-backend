@@ -202,6 +202,7 @@ describe('PUT /api/players/:playerId — owner-only enforcement', () => {
 
 describe('POST /api/players/register — immediate DB write (#282)', () => {
   it('calls upsertPlayer with correct fields after successful registration', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { upsertPlayer } = require('../../src/db');
     (upsertPlayer as jest.Mock).mockClear();
 

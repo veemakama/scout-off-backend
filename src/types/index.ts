@@ -92,8 +92,6 @@ export interface PlayerMilestone {
 
 // ─── Scout ────────────────────────────────────────────────────────────────────
 
-/** Available scout subscription tiers. */
-export type SubscriptionTier = 'basic' | 'premium';
 
 export interface Scout {
   wallet: string;
@@ -122,12 +120,6 @@ export interface AdminEvent {
   ledger: number;
   txHash: string;
   payload: Record<string, unknown>;
-}
-
-export interface FeeHistoryItem {
-  amount: number;
-  recipient: string;
-  ledger: number;
 }
 
 // ─── API shapes ───────────────────────────────────────────────────────────────
@@ -171,6 +163,7 @@ export interface JwtPayload {
 // src/middleware/auth.ts.
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       /** Stellar public key of the authenticated user (set by auth middleware). */
@@ -194,23 +187,13 @@ export interface Sep10Token {
   expiresAt: number; // Unix timestamp
 }
 
-// ─── Admin ────────────────────────────────────────────────────────────────────
-
-/** Shape of a contract event as returned by GET /api/admin/events. */
-export interface AdminEvent {
-  type: string;
-  ledger: number;
-  txHash: string;
-  payload: Record<string, unknown>;
-}
-
 /** Shape of a single fee withdrawal record from GET /api/admin/fees. */
 export interface FeeHistoryItem {
-  amount: string;        // XLM amount as string
-  recipient: string;     // Stellar address
+  amount: string;
+  recipient: string;
   ledger: number;
   txHash: string;
-  timestamp: number;     // Unix timestamp
+  timestamp: number;
 }
 
 // ─── Contract events (indexed) ────────────────────────────────────────────────

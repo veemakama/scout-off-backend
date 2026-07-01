@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { getEvents, queryPlayers } from "../db";
-import { sanitizeInput } from "../utils/sanitizer";
 import { ProgressLevel } from "../types";
 
 const recQuerySchema = z.object({

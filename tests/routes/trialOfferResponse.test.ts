@@ -20,6 +20,7 @@ const SCOUT_WALLET  = 'GSCOUTWALLET1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 const OFFER_ID      = 'offer-xyz-789';
 
 // In-memory store for mocked trial offers
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _offers: any[] = [];
 
 jest.mock('../../src/db', () => ({

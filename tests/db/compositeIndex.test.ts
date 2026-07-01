@@ -6,7 +6,7 @@ const Database: typeof import('better-sqlite3') = jest.requireActual(
 );
 
 function setupDb(): import('better-sqlite3').Database {
-  const db = new (Database as any)(':memory:');
+  const db = new Database(':memory:');
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,

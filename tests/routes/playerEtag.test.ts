@@ -1,5 +1,4 @@
 import request from 'supertest';
-import crypto from 'crypto';
 import app from '../../src/app';
 
 jest.mock('../../src/db', () => ({

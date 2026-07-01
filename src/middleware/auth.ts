@@ -76,7 +76,7 @@ export function requireRole(role: string) {
         logger.warn({
           method: req.method,
           path: req.path,
-          error: reason,
+          error: 'Insufficient permissions',
           requiredRole: role,
           providedRole: payload.role,
         });
@@ -103,8 +103,8 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
   if (header?.startsWith('Bearer ')) {
     try {
       const payload = verifyToken(header.slice(7));
-      (req as any).account = payload.sub;
-      (req as any).role = payload.role;
+      req.account = payload.sub;
+      req.role = payload.role;
     } catch {
       // Invalid/expired token — treat the request as anonymous
     }

@@ -301,15 +301,6 @@ async function getPlayerToken(): Promise<string> {
   return tokenRes.body.token;
 }
 
-/**
- * Returns a JWT whose sub is exactly `wallet`, so the token matches a specific wallet address.
- * Used to test ownership checks in /api/players/register.
- */
-async function getPlayerTokenForWallet(wallet: string): Promise<string> {
-  const jwt = await import('jsonwebtoken');
-  const secret = process.env.JWT_SECRET ?? 'test-secret';
-  return (jwt as any).default.sign({ sub: wallet, role: 'player' }, secret, { expiresIn: '1h' });
-}
 
 async function getAdminToken(): Promise<string> {
   const kp = Keypair.random();

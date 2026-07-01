@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-export function runMigrations(db: any, migrationsDir = path.resolve(__dirname, '../../db')): void {
+export function runMigrations(db: { exec(sql: string): void }, migrationsDir = path.resolve(__dirname, '../../db')): void {
   const files = fs.readdirSync(migrationsDir)
     .filter((file) => file.endsWith('.sql'))
     .sort();

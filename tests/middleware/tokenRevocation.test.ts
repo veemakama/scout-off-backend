@@ -1,7 +1,6 @@
-import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import app from '../../src/index';
+import app from '../../src/app';
 
 const SECRET = process.env.JWT_SECRET ?? 'test-secret';
 
@@ -12,7 +11,7 @@ jest.mock('../../src/services/tokenBlocklist', () => ({
   pruneExpiredTokens: jest.fn(),
 }));
 
-import { isTokenRevoked, revokeToken, pruneExpiredTokens } from '../../src/services/tokenBlocklist';
+import { isTokenRevoked, revokeToken } from '../../src/services/tokenBlocklist';
 const mockIsRevoked = isTokenRevoked as jest.Mock;
 const mockRevoke = revokeToken as jest.Mock;
 

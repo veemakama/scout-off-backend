@@ -16,7 +16,7 @@ import { runMigrations } from '../../src/utils/migrations';
 
 /** Open a fresh mock-backed Database for each test. */
 function openDb(): InstanceType<typeof Database> {
-  return new (Database as any)(':memory:');
+  return new Database(':memory:');
 }
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../db');

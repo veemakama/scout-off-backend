@@ -11,6 +11,7 @@ jest.mock('../../src/services/webhooks', () => ({
   dispatchEventWebhook: jest.fn().mockResolvedValue(undefined),
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { server } = require('../../src/services/stellar') as {
   server: { getEvents: jest.Mock };
 };

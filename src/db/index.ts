@@ -305,8 +305,8 @@ export interface GetPendingMilestonesOptions {
 export function getPendingMilestones(options: GetPendingMilestonesOptions): { data: PendingMilestoneRow[], total: number } {
   const db = getDb();
   // We need to join with players to filter by position and region
-  let whereConditions: string[] = [];
-  let params: (string | number)[] = [];
+  const whereConditions: string[] = [];
+  const params: (string | number)[] = [];
 
   if (options.validatorWallet) {
     whereConditions.push('pm.validator_wallet = ?');
@@ -519,4 +519,139 @@ export function getContactUnlocksByScout(scoutWallet: string): ContactUnlockRow[
 export function hasContactUnlock(scoutWallet: string, playerId: string): boolean {
   const sql = `SELECT 1 FROM contact_unlocks WHERE scout_wallet = ? AND player_id = ? LIMIT 1`;
   return timedQuery(sql, () => getDb().prepare(sql).get(scoutWallet, playerId) !== undefined);
+}
+
+// ─── Audit log helpers ────────────────────────────────────────────────────────
+
+export interface AuditLogRow {
+  id: number;
+  action: string;
+  admin_wallet: string;
+  query_params: string;
+  created_at: string;
+}
+
+export function insertAuditLog(p: {
+  action: string;
+  adminWallet?: string;
+  queryParams?: Record<string, unknown>;
+  createdAt: string;
+}): void {
+  const sql = `INSERT INTO audit_log (action, admin_wallet, query_params, created_at) VALUES (?, ?, ?, ?)`;
+  timedQuery(sql, () =>
+    getDb().prepare(sql).run(p.action, p.adminWallet ?? '', JSON.stringify(p.queryParams ?? {}), p.createdAt)
+  );
+}
+
+export function getAuditLogs(filters: {
+  action?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}): AuditLogRow[] {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (filters.action) { conditions.push('action = ?'); params.push(filters.action); }
+  if (filters.startDate) { conditions.push('created_at >= ?'); params.push(filters.startDate); }
+  if (filters.endDate) { conditions.push('created_at <= ?'); params.push(filters.endDate); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limit = filters.limit ?? 50;
+  const offset = filters.offset ?? 0;
+  const sql = `SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  return timedQuery(sql, () => getDb().prepare(sql).all(...params, limit, offset) as AuditLogRow[]);
+}
+
+export function getAuditLogsCount(filters: {
+  action?: string;
+  startDate?: string;
+  endDate?: string;
+}): number {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (filters.action) { conditions.push('action = ?'); params.push(filters.action); }
+  if (filters.startDate) { conditions.push('created_at >= ?'); params.push(filters.startDate); }
+  if (filters.endDate) { conditions.push('created_at <= ?'); params.push(filters.endDate); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const sql = `SELECT COUNT(*) AS count FROM audit_log ${where}`;
+  return timedQuery(sql, () => {
+    const row = getDb().prepare(sql).get(...params) as { count: number };
+    return row.count;
+  });
+}
+
+// ─── Trial offer helpers ──────────────────────────────────────────────────────
+
+export interface TrialOfferRow {
+  id: number;
+  offer_id: string;
+  scout_wallet: string;
+  player_id: string;
+  details_uri: string;
+  status: string;
+  reject_reason: string | null;
+  responded_at: number | null;
+  created_at: number;
+}
+
+export function getTrialOfferById(offerId: string): TrialOfferRow | null {
+  const sql = 'SELECT * FROM trial_offers WHERE offer_id = ?';
+  return timedQuery(sql, () =>
+    (getDb().prepare(sql).get(offerId) as TrialOfferRow | undefined) ?? null
+  );
+}
+
+export function insertTrialOffer(p: {
+  offer_id: string;
+  scout_wallet: string;
+  player_id: string;
+  details_uri: string;
+  created_at: number;
+}): void {
+  const sql = `INSERT OR IGNORE INTO trial_offers (offer_id, scout_wallet, player_id, details_uri, created_at) VALUES (?, ?, ?, ?, ?)`;
+  timedQuery(sql, () => getDb().prepare(sql).run(p.offer_id, p.scout_wallet, p.player_id, p.details_uri, p.created_at));
+}
+
+export function respondToTrialOffer(p: {
+  offer_id: string;
+  status: string;
+  reject_reason?: string;
+  responded_at: number;
+}): void {
+  const sql = `UPDATE trial_offers SET status = ?, reject_reason = ?, responded_at = ? WHERE offer_id = ?`;
+  timedQuery(sql, () => getDb().prepare(sql).run(p.status, p.reject_reason ?? null, p.responded_at, p.offer_id));
+}
+
+// ─── Pending pin helpers ──────────────────────────────────────────────────────
+
+export interface PendingPinRow {
+  id: number;
+  payload: string;
+  attempts: number;
+  created_at: string;
+  last_tried: string | null;
+}
+
+export function insertPendingPin(p: {
+  payload: string;
+  created_at: string;
+  last_tried: string;
+}): void {
+  const sql = `INSERT INTO pending_pins (payload, created_at, last_tried) VALUES (?, ?, ?)`;
+  timedQuery(sql, () => getDb().prepare(sql).run(p.payload, p.created_at, p.last_tried));
+}
+
+export function getPendingPins(): PendingPinRow[] {
+  const sql = 'SELECT * FROM pending_pins ORDER BY created_at ASC';
+  return timedQuery(sql, () => getDb().prepare(sql).all() as PendingPinRow[]);
+}
+
+export function deletePendingPin(id: number): void {
+  const sql = 'DELETE FROM pending_pins WHERE id = ?';
+  timedQuery(sql, () => getDb().prepare(sql).run(id));
+}
+
+export function incrementPendingPinAttempts(id: number): void {
+  const sql = 'UPDATE pending_pins SET attempts = attempts + 1, last_tried = ? WHERE id = ?';
+  timedQuery(sql, () => getDb().prepare(sql).run(new Date().toISOString(), id));
 }

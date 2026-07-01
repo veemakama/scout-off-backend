@@ -46,7 +46,7 @@ jest.mock('@stellar/stellar-sdk', () => ({
 
 import { isSubscribed, queryMilestones, PaymentError } from '../../src/services/stellar';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any
 const sdk = require('@stellar/stellar-sdk') as any;
 
 function getMockServer() {

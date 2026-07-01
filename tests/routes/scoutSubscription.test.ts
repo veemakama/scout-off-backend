@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Tests for the new subscription endpoints:
  *   PUT  /api/scouts/:wallet/subscribe  — renewal + new-via-PUT

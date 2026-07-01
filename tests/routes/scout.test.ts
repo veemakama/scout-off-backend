@@ -7,6 +7,13 @@ const SECRET = process.env.JWT_SECRET ?? 'test-secret';
 jest.mock('../../src/db', () => ({
   getEvents: jest.fn(),
   getPlayerById: jest.fn(),
+  getLatestSubscription: jest.fn(),
+  insertSubscription: jest.fn(),
+  dbRenewSubscription: jest.fn(),
+  dbCancelSubscription: jest.fn(),
+  insertContactUnlock: jest.fn(),
+  getContactUnlocksByScout: jest.fn().mockReturnValue([]),
+  hasContactUnlock: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('../../src/services/indexer', () => ({
@@ -27,14 +34,12 @@ jest.mock('../../src/services/stellar', () => ({
 }));
 
 import { getEvents, getPlayerById } from '../../src/db';
-import { submitContactPayment, purchaseSubscription, isSubscribed, logTrialOffer } from '../../src/services/stellar';
+import { submitContactPayment, purchaseSubscription, isSubscribed } from '../../src/services/stellar';
 const mockGetEvents = getEvents as jest.Mock;
 const mockGetPlayerById = getPlayerById as jest.Mock;
 const mockSubmitContactPayment = submitContactPayment as jest.Mock;
 const mockPurchaseSubscription = purchaseSubscription as jest.Mock;
 const mockIsSubscribed = isSubscribed as jest.Mock;
-const mockLogTrialOffer = logTrialOffer as jest.Mock;
-const mockPurchaseSubscription = purchaseSubscription as jest.Mock;
 
 function makeToken(wallet: string, role = 'scout'): string {
   return jwt.sign({ sub: wallet, role }, SECRET, { expiresIn: '1h' });
@@ -55,6 +60,7 @@ beforeEach(() => {
   mockGetPlayerById.mockReset();
   mockIsSubscribed.mockReset().mockResolvedValue({ active: false, expiresAt: null });
   // Ensure getLatestSubscription returns null by default
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { getLatestSubscription } = require('../../src/db');
   (getLatestSubscription as jest.Mock).mockReset().mockReturnValue(null);
 });

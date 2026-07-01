@@ -69,7 +69,8 @@ export async function pinJson(body: object): Promise<string> {
     return cid;
   } catch (err) {
     logger.critical('[ipfs] Pinata unavailable — queueing payload for retry', (err as Error).message);
-    insertPendingPin(body);
+    const now = new Date().toISOString();
+    insertPendingPin({ payload: JSON.stringify(body), created_at: now, last_tried: now });
     throw err;
   }
 }

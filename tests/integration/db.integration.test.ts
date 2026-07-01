@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Integration tests that run against a real better-sqlite3 in-memory database.
  * These bypass the __mocks__/better-sqlite3.js stub to catch SQL-level bugs

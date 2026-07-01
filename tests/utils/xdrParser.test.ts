@@ -1,4 +1,4 @@
-import { xdr, nativeToScVal } from '@stellar/stellar-sdk';
+import { nativeToScVal } from '@stellar/stellar-sdk';
 import { parseBoolean, parseU128, parseMilestones, parseSubscription } from '../../src/utils/xdrParser';
 
 describe('parseBoolean', () => {

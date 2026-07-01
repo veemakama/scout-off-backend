@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import { Request, Response, NextFunction } from "express";
 import { sanitizeInput } from "../utils/sanitizer";
 import { createId } from "@paralleldrive/cuid2";
@@ -8,7 +7,6 @@ import { pinJson } from "../services/ipfs";
 import { serializeIpfsResult } from "../utils/ipfsSerializer";
 import {
   getEvents,
-  getPlayerById,
   insertPlayerProfileHistory,
   queryPlayers,
   countPlayers,
@@ -76,7 +74,7 @@ export async function registerPlayer(
 
     // Ensure the wallet in the request body belongs to the authenticated account.
     // Without this check a player could register a profile under another player's address.
-    if (parsed.wallet !== (req as any).account) {
+    if (parsed.wallet !== req.account) {
       res.status(403).json({ success: false, error: 'wallet must match authenticated account' });
       return;
     }
@@ -152,7 +150,7 @@ export async function getPlayer(
       res.status(404).json({ success: false, error: "Player not found", code: ErrorCode.PLAYER_NOT_FOUND });
       return;
     }
-    const { tierName, tierDescription } = getTierMeta(row.progress_level);
+    const { tierName, tierDescription } = getTierMeta(row.progress_level as number);
     const data = {
       player_id: row.player_id,
       wallet: row.wallet,
@@ -241,7 +239,7 @@ export async function filterPlayers(
     const result: FilterPlayersResult = { data: enriched, total, page, pageSize, pages };
     cacheSet(cacheKey, result);
 
-    const scoutWallet = (req as any).account ?? 'anonymous';
+    const scoutWallet = req.account ?? 'anonymous';
     recordAudit(scoutWallet, 'player_search', {
       region: sanitizedRegion ?? null,
       position: normalizedPosition ?? sanitizedPosition ?? null,

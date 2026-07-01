@@ -180,6 +180,7 @@ describe('JWT key rotation (#273)', () => {
     process.env.JWT_SECRET_PREVIOUS = PREV_SECRET;
     // Re-import to pick up the new env value
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { requireAuth: requireAuthFresh } = require('../../src/middleware/auth');
     const token = jwt.sign({ sub: 'GTEST', role: 'player' }, PREV_SECRET, { expiresIn: '1h' });
     const { req, res, next } = makeReqRes(token);
@@ -190,6 +191,7 @@ describe('JWT key rotation (#273)', () => {
   it('returns 401 for a token signed with an unknown secret', () => {
     process.env.JWT_SECRET_PREVIOUS = PREV_SECRET;
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { requireAuth: requireAuthFresh } = require('../../src/middleware/auth');
     const token = jwt.sign({ sub: 'GTEST', role: 'player' }, 'completely-unknown-secret', { expiresIn: '1h' });
     const { req, res, next } = makeReqRes(token);

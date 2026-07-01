@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { xdr, SorobanRpc, Account } from '@stellar/stellar-sdk';
 import {
   invokeContract,

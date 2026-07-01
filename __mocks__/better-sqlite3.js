@@ -298,6 +298,7 @@ class Database {
     this._events = [];
     this._state = new Map();
     this._players = [];
+    this._createdTables = new Set();
 
     this._auditLog = [];
     this._pendingPins = [];

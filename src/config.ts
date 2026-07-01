@@ -65,7 +65,7 @@ const config = {
     ],
   },
   platformFeeBps: parseInt(process.env.PLATFORM_FEE_BPS ?? '500', 10),
-  platformSecret: process.env.PLATFORM_SECRET ?? '',
+  jwtSecretPrevious: process.env.JWT_SECRET_PREVIOUS ?? '',
   platformSecretKey: (() => {
     const isTest = (process.env.NODE_ENV ?? 'development') === 'test';
     const val = process.env.PLATFORM_SECRET_KEY ?? '';

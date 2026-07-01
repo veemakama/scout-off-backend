@@ -20,6 +20,7 @@ import {
   logTrialOffer as stellarLogTrialOffer,
   cancelSubscriptionOnChain,
 } from '../services/stellar';
+import { isValidStellarAddress } from '../utils/stellarAddress';
 import { logger } from '../utils/logger';
 import config from '../config';
 import { ErrorCode } from '../utils/errorCodes';

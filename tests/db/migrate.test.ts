@@ -3,7 +3,7 @@ import { runMigrations } from '../../src/db/migrate';
 
 describe('runMigrations', () => {
   it('applies 001_initial.sql on first run', () => {
-    const db = new (Database as any)(':memory:');
+    const db = new Database(':memory:');
 
     runMigrations(db);
 
@@ -12,7 +12,7 @@ describe('runMigrations', () => {
   });
 
   it('applies 003_subscriptions.sql and creates the subscriptions table', () => {
-    const db = new (Database as any)(':memory:');
+    const db = new Database(':memory:');
 
     runMigrations(db);
 
@@ -24,7 +24,7 @@ describe('runMigrations', () => {
   });
 
   it('applies 004_validators.sql and creates the validators table (#290)', () => {
-    const db = new (Database as any)(':memory:');
+    const db = new Database(':memory:');
 
     runMigrations(db);
 
@@ -35,7 +35,7 @@ describe('runMigrations', () => {
   });
 
   it('applies 005_contact_unlocks.sql and creates the contact_unlocks table (#284)', () => {
-    const db = new (Database as any)(':memory:');
+    const db = new Database(':memory:');
 
     runMigrations(db);
 
@@ -46,7 +46,7 @@ describe('runMigrations', () => {
   });
 
   it('is idempotent — running twice applies each migration exactly once', () => {
-    const db = new (Database as any)(':memory:');
+    const db = new Database(':memory:');
 
     runMigrations(db);
     runMigrations(db);
