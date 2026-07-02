@@ -82,6 +82,17 @@ router.get('/audit', requireRole('admin'), getAuditLog);
 router.post('/fees', requireRole('admin'), withdrawFeesController);
 
 /**
+ * GET /api/admin/validators
+ *
+ * Returns the full list of registered validator wallets from the local DB,
+ * including their registration timestamp, revocation timestamp (if any), and tx_hash.
+ *
+ * @response 200 { success: true, data: ValidatorRow[] }
+ * @auth Bearer (admin role required)
+ */
+router.get('/validators', requireRole('admin'), listValidators);
+
+/**
  * POST /api/admin/validators/register
  *
  * Submits a request to register a new validator on the Soroban contract.

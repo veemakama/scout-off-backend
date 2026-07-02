@@ -158,3 +158,42 @@ export async function indexEvents(): Promise<void> {
   setLastLedger(latest.ledger + 1);
   indexerLedgerLag = Math.max(0, response.latestLedger - latest.ledger);
 }
+
+// ─── Validator registry helpers ───────────────────────────────────────────────
+
+export interface ValidatorRow {
+  wallet: string;
+  registered_at: number;
+  revoked_at: number | null;
+  tx_hash: string | null;
+}
+
+/**
+ * Insert a newly registered validator into the local DB.
+ * Uses INSERT OR REPLACE so a re-registration after revocation resets the row.
+ */
+export function insertValidator(wallet: string, txHash?: string): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO validators (wallet, registered_at, revoked_at, tx_hash)
+     VALUES (?, ?, NULL, ?)`
+  ).run(wallet, Math.floor(Date.now() / 1000), txHash ?? null);
+}
+
+/**
+ * Mark an existing validator as revoked by setting revoked_at.
+ * No-op if the wallet is not found.
+ */
+export function revokeValidatorRow(wallet: string, txHash?: string): void {
+  db.prepare(
+    `UPDATE validators SET revoked_at = ?, tx_hash = ? WHERE wallet = ?`
+  ).run(Math.floor(Date.now() / 1000), txHash ?? null, wallet);
+}
+
+/**
+ * Return all validator rows ordered by registration time descending.
+ */
+export function getAllValidators(): ValidatorRow[] {
+  return db.prepare(
+    `SELECT wallet, registered_at, revoked_at, tx_hash FROM validators ORDER BY registered_at DESC`
+  ).all() as ValidatorRow[];
+}
