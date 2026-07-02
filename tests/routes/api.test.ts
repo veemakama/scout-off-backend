@@ -9,6 +9,7 @@ jest.mock('../../src/services/ipfs', () => ({
   pinJson: jest.fn().mockResolvedValue('QmSoLV4Bbm51jM9C4gDYZQ9Cy3U6aXMJDAbzgu2fzaDs64'),
   checkHealth: jest.fn().mockResolvedValue(undefined),
   gatewayUrl: jest.fn((cid) => `https://gateway.pinata.cloud/ipfs/${cid}`),
+  gatewayUrls: jest.fn((cid) => [`https://gateway.pinata.cloud/ipfs/${cid}`]),
 }));
 
 jest.mock('../../src/db', () => ({
@@ -23,6 +24,8 @@ jest.mock('../../src/db', () => ({
   insertSubscription: jest.fn().mockReturnValue(1),
   renewSubscription: jest.fn(),
   cancelSubscription: jest.fn(),
+  getPendingMilestones: jest.fn().mockReturnValue({ data: [], total: 0 }),
+  upsertPlayer: jest.fn(),
 }));
 
 jest.mock('../../src/services/indexer', () => ({
@@ -106,7 +109,14 @@ describe('POST /api/players/register', () => {
   });
 
   it('accepts registration payloads with valid metadataUri', async () => {
-    const token = await getPlayerToken();
+    // registerPlayer requires body.wallet === req.account, so the token must
+    // be signed for PLAYER_WALLET specifically (getPlayerToken() signs for a
+    // fresh random keypair each call, which would never match).
+    const token = jwt.sign(
+      { sub: PLAYER_WALLET, role: 'player' },
+      process.env.JWT_SECRET ?? 'test-secret',
+      { expiresIn: '1h' },
+    );
     const res = await request(app)
       .post('/api/players/register')
       .set('Authorization', `Bearer ${token}`)
@@ -178,7 +188,7 @@ describe('GET /api/players/:playerId/milestones route validation', () => {
   });
 
   it('rejects an invalid player ID with 400', async () => {
-    const res = await request(app).get('/api/players/player#123/milestones');
+    const res = await request(app).get('/api/players/player%23123/milestones');
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.error).toContain('playerId may only contain letters, numbers, underscores, and hyphens');

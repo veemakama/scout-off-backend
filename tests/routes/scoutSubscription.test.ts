@@ -31,14 +31,14 @@ jest.mock('../../src/db', () => {
       subscriptions.push({ id, ...p, cancelled_at: null });
       return id;
     }),
-    renewSubscription: jest.fn().mockImplementation((p: any) => {
+    dbRenewSubscription: jest.fn().mockImplementation((p: any) => {
       const idx = subscriptions.findIndex((s) => s.id === p.id);
       if (idx >= 0) {
         subscriptions[idx].tier = p.tier;
         subscriptions[idx].expires_at = p.expires_at;
       }
     }),
-    cancelSubscription: jest.fn().mockImplementation((p: any) => {
+    dbCancelSubscription: jest.fn().mockImplementation((p: any) => {
       const idx = subscriptions.findIndex((s) => s.id === p.id);
       if (idx >= 0) subscriptions[idx].cancelled_at = p.cancelled_at;
     }),
@@ -63,8 +63,8 @@ jest.mock('../../src/services/stellar', () => ({
 import {
   getLatestSubscription,
   insertSubscription,
-  renewSubscription as dbRenew,
-  cancelSubscription as dbCancel,
+  dbRenewSubscription as dbRenew,
+  dbCancelSubscription as dbCancel,
 } from '../../src/db';
 import {
   purchaseSubscription,
@@ -82,8 +82,8 @@ const mockStellarRenew = stellarRenew as jest.Mock;
 const mockCancelOnChain = cancelSubscriptionOnChain as jest.Mock;
 const mockIsSubscribed = isSubscribed as jest.Mock;
 
-const WALLET = 'GSCOUTWALLET1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-const OTHER  = 'GOTHERWALLET2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const WALLET = 'GDKSHEL5SMPOFACYRWBN7R5ONIF34MSBJWBVAFFTW6OB3B4WPEUYNQC5';
+const OTHER  = 'GAKDJUDRDDNTQFJAXI7T5HQ6ZFBRC2ICLEQHSCQJYU46UFC26GVQO52Q';
 
 function makeToken(wallet: string, role = 'scout'): string {
   return jwt.sign({ sub: wallet, role }, SECRET, { expiresIn: '1h' });

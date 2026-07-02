@@ -142,6 +142,7 @@ export async function indexEvents(): Promise<void> {
           ).length;
           updatePlayerProgress(playerId, tierForApprovedMilestones(approvedMilestoneCount));
         }
+        webhookEvents.push({ type, payload });
       }
     }
   });
@@ -159,6 +160,41 @@ export async function indexEvents(): Promise<void> {
   indexerLedgerLag = Math.max(0, response.latestLedger - latest.ledger);
 }
 
+// ─── Trial offer event log (#285) ──────────────────────────────────────────────
+
+export interface TrialOfferEventRow {
+  scout_wallet: string;
+  player_id: string;
+  details_uri: string;
+  tx_hash: string;
+  created_at: number;
+}
+
+/**
+ * Persist an on-chain trial offer submission. Deduped by tx_hash (INSERT OR
+ * IGNORE) so replaying the same on-chain event never creates duplicate rows.
+ */
+export function insertTrialOffer(
+  scoutWallet: string,
+  playerId: string,
+  detailsUri: string,
+  txHash: string,
+  createdAt: number,
+): void {
+  getDb().prepare(
+    `INSERT OR IGNORE INTO trial_offer_events (scout_wallet, player_id, details_uri, tx_hash, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(scoutWallet, playerId, detailsUri, txHash, createdAt);
+}
+
+/** Return all trial offer events for a scout wallet, most recent first. */
+export function getTrialOffers(scoutWallet: string): TrialOfferEventRow[] {
+  return getDb().prepare(
+    `SELECT scout_wallet, player_id, details_uri, tx_hash, created_at
+     FROM trial_offer_events WHERE scout_wallet = ? ORDER BY created_at DESC`
+  ).all(scoutWallet) as TrialOfferEventRow[];
+}
+
 // ─── Validator registry helpers ───────────────────────────────────────────────
 
 export interface ValidatorRow {
@@ -173,7 +209,7 @@ export interface ValidatorRow {
  * Uses INSERT OR REPLACE so a re-registration after revocation resets the row.
  */
 export function insertValidator(wallet: string, txHash?: string): void {
-  db.prepare(
+  getDb().prepare(
     `INSERT OR REPLACE INTO validators (wallet, registered_at, revoked_at, tx_hash)
      VALUES (?, ?, NULL, ?)`
   ).run(wallet, Math.floor(Date.now() / 1000), txHash ?? null);
@@ -184,7 +220,7 @@ export function insertValidator(wallet: string, txHash?: string): void {
  * No-op if the wallet is not found.
  */
 export function revokeValidatorRow(wallet: string, txHash?: string): void {
-  db.prepare(
+  getDb().prepare(
     `UPDATE validators SET revoked_at = ?, tx_hash = ? WHERE wallet = ?`
   ).run(Math.floor(Date.now() / 1000), txHash ?? null, wallet);
 }
@@ -193,7 +229,7 @@ export function revokeValidatorRow(wallet: string, txHash?: string): void {
  * Return all validator rows ordered by registration time descending.
  */
 export function getAllValidators(): ValidatorRow[] {
-  return db.prepare(
+  return getDb().prepare(
     `SELECT wallet, registered_at, revoked_at, tx_hash FROM validators ORDER BY registered_at DESC`
   ).all() as ValidatorRow[];
 }

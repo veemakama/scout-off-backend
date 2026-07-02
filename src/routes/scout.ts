@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getSubscription, getUnlockedContacts, getContactDetails, unlockContact, getPaymentHistory, subscribe, cancelSubscription, submitTrialOffer, trialOfferSchema, unlockContactSchema } from '../controllers/scoutController';
+import { getSubscription, getUnlockedContacts, getContactDetails, unlockContact, getPaymentHistory, subscribe, renewSubscription, cancelSubscription, submitTrialOffer, listTrialOffers, createTrialOffer, trialOfferSchema, unlockContactSchema } from '../controllers/scoutController';
 import { getScoutRecommendations } from '../controllers/scoutRecommendationsController';
 import { requireRole } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
@@ -53,6 +53,8 @@ router.post("/:wallet/subscribe", requireRole("scout"), walletRateLimit(), subsc
  * @response 403 { success: false, error: string } - Scout role required or wallet mismatch
  * @auth Bearer (scout role required)
  */
+router.put("/:wallet/subscribe", requireRole("scout"), walletRateLimit(), renewSubscription);
+
 router.get("/:wallet/contacts", requireRole("scout"), getUnlockedContacts);
 router.get("/:wallet/contacts/:playerId", requireRole("scout"), getContactDetails);
 
@@ -95,6 +97,22 @@ router.post(
   requireRole('scout'),
   validateBody(trialOfferSchema),
   submitTrialOffer,
+);
+
+/**
+ * GET /api/scouts/:wallet/trial-offers
+ * POST /api/scouts/:wallet/trial-offers
+ *
+ * On-chain trial offer event log (#285): submits (and lists) trial offers
+ * indexed locally by tx_hash. Distinct from the singular /trial-offer stub
+ * endpoint above and from the accept/reject workflow in trialOfferController.
+ */
+router.get('/:wallet/trial-offers', requireRole('scout'), listTrialOffers);
+router.post(
+  '/:wallet/trial-offers',
+  requireRole('scout'),
+  validateBody(trialOfferSchema),
+  createTrialOffer,
 );
 
 /**

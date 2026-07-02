@@ -63,7 +63,6 @@
       "<rootDir>/tests/setup.ts"
     ],
     "moduleNameMapper": {
-      "^better-sqlite3$": "<rootDir>/__mocks__/better-sqlite3.js",
       "^@paralleldrive/cuid2$": "<rootDir>/__mocks__/@paralleldrive/cuid2.js"
     },
     "globals": {

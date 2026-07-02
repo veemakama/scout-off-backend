@@ -55,6 +55,7 @@ router.put(
  */
 router.get(
   "/:playerId/history",
+  optionalAuth,
   (req: Request, res: Response, next: NextFunction) => {
     if (req.role === "admin") {
       return getPlayerHistory(req, res, next);

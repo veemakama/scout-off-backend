@@ -1,20 +1,9 @@
 import request from 'supertest';
 import app from '../../src/app';
-import { Keypair, Transaction, Networks } from '@stellar/stellar-sdk';
+import jwt from 'jsonwebtoken';
 
-async function getToken(role = 'scout'): Promise<string> {
-  const kp = Keypair.random();
-  const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
-  const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
-  tx.sign(kp);
-  const tokenRes = await request(app)
-    .post('/auth/token')
-    .send({ transaction: tx.toXDR(), role });
-  return tokenRes.body.token;
-}
-
-const WALLET = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
-const OTHER_WALLET = 'GBVVJJWBDPFBFYGJZATBCEMQJC4NVVV5MFSM9AYX6XLPKZK36BLLEYK';
+const WALLET = 'GCXYK3YRWDH5P3MICHW5IPAYVU7LK7V4UNCD6JAPKPR6F4WL6MZZSSAB';
+const OTHER_WALLET = 'GDCTMZJTRZWFS74OKS6Z2GPJ3NCLJSUBGFI6FM7L3U3GM66F5UN2W4IT';
 const SECRET = process.env.JWT_SECRET ?? 'test-secret';
 
 function makeToken(sub: string, role = 'scout'): string {
@@ -98,7 +87,7 @@ describe('GET /api/scouts/:wallet/payments', () => {
         },
       },
     ]);
-    const token = await getToken('scout');
+    const token = makeToken(WALLET);
     const res = await request(app)
       .get(`/api/scouts/${WALLET}/payments`)
       .set('Authorization', `Bearer ${token}`);
@@ -121,7 +110,7 @@ describe('GET /api/scouts/:wallet/payments', () => {
         },
       },
     ]);
-    const token = await getToken('scout');
+    const token = makeToken(WALLET);
     const res = await request(app)
       .get(`/api/scouts/${WALLET}/payments`)
       .set('Authorization', `Bearer ${token}`);
@@ -145,13 +134,15 @@ describe('GET /api/scouts/:wallet/payments', () => {
         payload: { scout: WALLET, fee: '2', timestamp: '2024-02-01T00:00:00.000Z' },
       },
     ]);
-    const token = await getToken('scout');
+    const token = makeToken(WALLET);
     const res = await request(app)
       .get(`/api/scouts/${WALLET}/payments`)
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     for (const item of res.body.data) {
-      expect(item.transactionId).not.toMatch(/^mock-tx-/);
+      if (item.transactionId !== null) {
+        expect(item.transactionId).not.toMatch(/^mock-tx-/);
+      }
     }
   });
 });

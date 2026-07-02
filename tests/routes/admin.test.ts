@@ -144,7 +144,7 @@ describe('GET /api/admin/validators', () => {
       .get('/api/admin/validators')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    const found = res.body.data.find((v: any) => v.wallet === VALID_WALLET);
+    const found = res.body.data.find((v: { wallet: string }) => v.wallet === VALID_WALLET);
     expect(found).toBeDefined();
     expect(found.registered_at).toBeGreaterThan(0);
     expect(found.revoked_at).toBeNull();
@@ -165,7 +165,7 @@ describe('GET /api/admin/validators', () => {
       .get('/api/admin/validators')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    const found = res.body.data.find((v: any) => v.wallet === VALID_WALLET);
+    const found = res.body.data.find((v: { wallet: string }) => v.wallet === VALID_WALLET);
     expect(found).toBeDefined();
     expect(found.revoked_at).not.toBeNull();
   });

@@ -2,9 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import { getEvents, getEventsCount, getLastLedger, setLastLedger, getValidatorStats, getAuditLogs, getAuditLogsCount } from '../db';
+import { getAllValidators, insertValidator, revokeValidatorRow } from '../services/indexer';
 import { ApiResponse, EventRecord, ContractEventType } from '../types';
 import { logAuditEvent } from '../services/audit';
 import { withdrawFees as stellarWithdrawFees, FeeWithdrawalError, FeeWithdrawalResult, unpauseContractOnChain } from '../services/stellar';
+import { revokeToken } from '../services/tokenBlocklist';
 import config from '../config';
 import { logger } from '../utils/logger';
 import { ErrorCode } from '../utils/errorCodes';
@@ -134,6 +136,15 @@ export async function getFeeSummary(req: Request, res: Response, next: NextFunct
   }
 }
 
+/** GET /api/admin/validators */
+export async function listValidators(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, data: getAllValidators() });
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** POST /api/admin/validators/register */
 export async function registerValidator(req: Request, res: Response, next: NextFunction) {
   try {
@@ -148,6 +159,7 @@ export async function registerValidator(req: Request, res: Response, next: NextF
 
     logger.info(`[admin] action=register_validator admin=${adminWallet} target=${validatorWallet}`);
     // TODO: invoke register_validator on Soroban contract
+    insertValidator(validatorWallet);
     res.status(202).json({ success: true, message: `Validator ${validatorWallet} registration submitted` });
   } catch (err) {
     next(err);
@@ -168,6 +180,7 @@ export async function revokeValidator(req: Request, res: Response, next: NextFun
 
     logger.info(`[admin] action=revoke_validator admin=${adminWallet} target=${validatorWallet}`);
     // TODO: invoke revoke_validator on Soroban contract
+    revokeValidatorRow(validatorWallet);
     res.status(202).json({ success: true, message: `Validator ${validatorWallet} revocation submitted` });
   } catch (err) {
     next(err);
@@ -261,23 +274,55 @@ export async function unpauseContract(req: Request, res: Response, next: NextFun
   }
 }
 
-const introspectSchema = z.object({
-  token: z.string().min(1, 'token is required'),
-});
+const revokeTokenSchema = z.object({
+  jti: z.string().min(1).optional(),
+  token: z.string().min(1).optional(),
+}).refine((d) => !!d.jti || !!d.token, { message: 'jti or token is required' });
 
-/** POST /api/admin/introspect */
-export async function introspectToken(req: Request, res: Response, next: NextFunction) {
+/** POST /api/admin/tokens/revoke */
+export async function revokeTokenController(req: Request, res: Response, next: NextFunction) {
   try {
-    const parsed = introspectSchema.safeParse(req.body);
+    const parsed = revokeTokenSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ success: false, error: parsed.error.errors[0].message, code: ErrorCode.VALIDATION_ERROR });
+      res.status(400).json({ success: false, error: parsed.error.errors[0]?.message ?? 'jti or token is required', code: ErrorCode.VALIDATION_ERROR });
       return;
     }
 
-    let payload: jwt.JwtPayload;
-    try {
-      payload = jwt.verify(parsed.data.token, config.jwtSecret) as jwt.JwtPayload;
-    } catch {
+    const defaultExpiresAt = Math.floor(Date.now() / 1000) + 86400;
+    let jti = parsed.data.jti;
+    let expiresAt = defaultExpiresAt;
+
+    if (!jti && parsed.data.token) {
+      const decoded = jwt.decode(parsed.data.token) as jwt.JwtPayload | null;
+      if (!decoded?.jti) {
+        res.status(400).json({ success: false, error: 'Token does not contain a jti claim', code: ErrorCode.VALIDATION_ERROR });
+        return;
+      }
+      jti = decoded.jti;
+      expiresAt = decoded.exp ?? defaultExpiresAt;
+    }
+
+    revokeToken(jti as string, expiresAt);
+    res.json({ success: true, data: { jti } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/admin/introspect
+ *
+ * Decodes the caller's OWN bearer token (from the Authorization header) only.
+ * Any `token` field in the request body is intentionally ignored — accepting
+ * an arbitrary token there would let an admin introspect another user's
+ * claims (#279).
+ */
+export async function introspectToken(req: Request, res: Response, next: NextFunction) {
+  try {
+    // requireRole('admin') has already verified this header's token.
+    const callerToken = (req.headers.authorization ?? '').slice(7);
+    const payload = jwt.decode(callerToken) as jwt.JwtPayload | null;
+    if (!payload) {
       res.status(400).json({ success: false, error: 'Invalid or expired token', code: ErrorCode.TOKEN_INVALID });
       return;
     }

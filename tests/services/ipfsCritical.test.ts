@@ -5,7 +5,7 @@ jest.mock('../../src/config', () => ({
     pinata: { apiKey: 'test-key', secret: 'test-secret', gateway: 'https://gateway.pinata.cloud' },
     logLevel: 'warn',
     nodeEnv: 'test',
-    ipfsPinCacheTtlMs: 300000,
+    pinJsonCacheTtlMs: 300000,
   },
 }));
 
@@ -55,7 +55,9 @@ describe('pinJson IPFS failure handling (#346)', () => {
     mockedPost.mockRejectedValue(new Error('connection refused'));
     const body = { wallet: 'Gqueue', position: 'striker' };
     await expect(pinJson(body)).rejects.toThrow();
-    expect(insertPendingPin).toHaveBeenCalledWith(body);
+    expect(insertPendingPin).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: JSON.stringify(body) })
+    );
   });
 
   it('does not call critical or queue on successful pin', async () => {

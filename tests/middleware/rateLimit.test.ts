@@ -8,6 +8,7 @@ function makeReqRes(ip = '127.0.0.1') {
   const res = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
   } as unknown as Response;
   const next = jest.fn() as NextFunction;
   return { req, res, next };

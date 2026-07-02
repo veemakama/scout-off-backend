@@ -29,8 +29,8 @@ jest.mock('../../src/services/indexer', () => ({
   normalizeEventId: jest.fn(),
 }));
 
-const SCOUT_A = 'GSCOUTWALLETA1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-const SCOUT_B = 'GSCOUTWALLETB2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const SCOUT_A = 'GBR74NFBBGUV3VPNRT77QKUE55O4EAYTF52BACRRXOJ4GLBQOSH7EUNH';
+const SCOUT_B = 'GBDVKEFA4VTCQOORAW5VGF27XXLBK425EQR64Y47KJGGQ2TEUNJVX7PF';
 
 function makeScoutToken(wallet: string): string {
   return jwt.sign({ sub: wallet, role: 'scout' }, SECRET, { expiresIn: '1h' });

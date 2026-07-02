@@ -11,7 +11,7 @@ import jwt from 'jsonwebtoken';
 import app from '../../src/app';
 
 const SECRET = process.env.JWT_SECRET ?? 'test-secret';
-const WALLET = 'G' + 'S'.repeat(55);
+const WALLET = 'GAEW6VQNHJ45XOB5IBZVI2HLJGXPEM5JEKB5XR3CVAUGDNVATCW36GU4';
 const PLAYER_ID = 'player-unlock-303';
 
 jest.mock('../../src/db', () => ({

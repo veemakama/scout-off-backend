@@ -88,7 +88,7 @@ export function postToken(req: Request, res: Response, next: NextFunction): void
         origin: extractClientIp(req),
         reason: err.message,
       });
-      res.status(401).json({ success: false, error: err.message, code: ErrorCode.UNAUTHORIZED });
+      res.status(400).json({ success: false, error: err.message, code: ErrorCode.VALIDATION_ERROR });
       return;
     }
     next(err);

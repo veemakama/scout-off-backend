@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import compression from 'compression';
 import config from './config';
 import authRoutes from './routes/auth';
@@ -40,6 +41,10 @@ async function probeDb(timeoutMs = 2_000): Promise<'ok' | 'error'> {
 }
 
 const app = express();
+// Disable Express's automatic ETag on every response — it would also tag
+// error bodies (e.g. 404s). ETags are set explicitly where conditional GET
+// support is actually implemented (see getPlayer).
+app.set('etag', false);
 
 const corsOrigin =
   config.nodeEnv !== 'development' && config.allowedOrigins.length > 0
@@ -50,6 +55,9 @@ app.use(compression({ threshold: parseInt(process.env.COMPRESSION_THRESHOLD ?? '
 app.use(requestTimeout);
 app.use(correlationId);
 app.use(traceId);
+// helmet first so the explicit values below (driven by config.securityHeaders) win
+// on any header both middlewares set.
+app.use(helmet());
 app.use(securityHeaders);
 app.use(responseTime);
 // Configure Express body parser with JSON payload size limit
@@ -76,6 +84,8 @@ app.get('/health', async (_req, res) => {
 
 async function checkReadiness(): Promise<Record<string, 'ok' | 'unavailable' | 'disabled'>> {
   const services: Record<string, 'ok' | 'unavailable' | 'disabled'> = {};
+
+  services.db = (await probeDb()) === 'ok' ? 'ok' : 'unavailable';
 
   try {
     await checkHealth();
@@ -141,7 +151,7 @@ for (const prefix of prefixes) {
 
 // Catch-all 404 handler for unmatched routes
 app.use((_req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+  res.status(404).json({ success: false, error: 'Not Found' });
 });
 
 app.use(errorHandler);

@@ -45,7 +45,7 @@ describe('indexEvents — milestone_approved webhook dispatch', () => {
     server.getEvents.mockResolvedValue({
       events: [
         makeEvent('milestone_approved', { player_id: 'P1' }, 'hash-002', 100),
-        makeEvent('player_registered', { player_id: 'P2' }, 'hash-003', 101),
+        makeEvent('player_registered', { player_id: 'P2', wallet: 'GWALLETP2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }, 'hash-003', 101),
         makeEvent('milestone_approved', { player_id: 'P3' }, 'hash-004', 102),
       ],
     });
@@ -59,7 +59,7 @@ describe('indexEvents — milestone_approved webhook dispatch', () => {
 
   it('does not dispatch a webhook for non-milestone_approved events', async () => {
     server.getEvents.mockResolvedValue({
-      events: [makeEvent('player_registered', { player_id: 'P1' }, 'hash-005')],
+      events: [makeEvent('player_registered', { player_id: 'P1', wallet: 'GWALLETP1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }, 'hash-005')],
     });
 
     await indexEvents();

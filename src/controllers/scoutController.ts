@@ -10,6 +10,8 @@ import {
   insertContactUnlock,
   getContactUnlocksByScout,
   hasContactUnlock,
+  getIdempotencyRecord,
+  saveIdempotencyRecord,
 } from '../db';
 import {
   submitContactPayment,
@@ -24,6 +26,8 @@ import { isValidStellarAddress } from '../utils/stellarAddress';
 import { logger } from '../utils/logger';
 import config from '../config';
 import { ErrorCode } from '../utils/errorCodes';
+import { insertTrialOffer, getTrialOffers } from '../services/indexer';
+import { invokeContract, strVal } from '../utils/contract';
 
 // ─── Validation schemas ────────────────────────────────────────────────────────
 
@@ -96,6 +100,10 @@ async function scoutHasPlayerAccess(scoutWallet: string, playerId: string): Prom
 export async function getSubscription(req: Request, res: Response, next: NextFunction) {
   try {
     const { wallet } = req.params;
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     if (req.account !== wallet) {
       res.status(401).json({ success: false, error: 'Unauthorized', code: ErrorCode.UNAUTHORIZED });
       return;
@@ -172,12 +180,24 @@ export async function getSubscription(req: Request, res: Response, next: NextFun
 
 /** POST /api/scouts/:wallet/subscribe — new subscription */
 export async function subscribe(req: Request, res: Response, next: NextFunction) {
+  const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
   try {
     const { wallet } = req.params;
     if (req.account !== wallet) {
       res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account' });
       return;
     }
+
+    // Safe retries (#idempotency): a duplicate key within the TTL returns the
+    // cached response instead of triggering a new on-chain transaction.
+    if (idempotencyKey) {
+      const cached = getIdempotencyRecord(idempotencyKey);
+      if (cached) {
+        res.status(cached.status_code).json(JSON.parse(cached.response));
+        return;
+      }
+    }
+
     const parsed = subscribeSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ success: false, error: parsed.error.errors[0]?.message ?? 'Invalid request body' });
@@ -194,10 +214,14 @@ export async function subscribe(req: Request, res: Response, next: NextFunction)
       created_at: Math.floor(Date.now() / 1000),
     });
 
-    res.status(201).json({ success: true, data: result });
+    const body = { success: true, data: result };
+    if (idempotencyKey) saveIdempotencyRecord(idempotencyKey, 201, body);
+    res.status(201).json(body);
   } catch (err) {
     if (err instanceof PaymentError) {
-      res.status(402).json({ success: false, error: err.message, code: err.code });
+      const body = { success: false, error: err.message, code: err.code };
+      if (idempotencyKey) saveIdempotencyRecord(idempotencyKey, 402, body);
+      res.status(402).json(body);
       return;
     }
     next(err);
@@ -317,6 +341,10 @@ export async function getUnlockedContacts(req: Request, res: Response, next: Nex
     const { wallet } = req.params;
     const { playerId } = req.query as { playerId?: string };
 
+    if (!isValidStellarAddress(wallet)) {
+      res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
     if (req.account !== wallet) {
       res.status(401).json({ success: false, error: 'Unauthorized', code: ErrorCode.UNAUTHORIZED });
       return;
@@ -381,6 +409,34 @@ export async function unlockContact(req: Request, res: Response, next: NextFunct
   }
 }
 
+// ─── GET/POST /api/scouts/:wallet/trial-offers (#285) ──────────────────────────
+
+/** GET /api/scouts/:wallet/trial-offers — on-chain trial offer event history */
+export async function listTrialOffers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { wallet } = req.params;
+    res.json({ success: true, data: getTrialOffers(wallet) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/scouts/:wallet/trial-offers — submit a trial offer on-chain and index it locally */
+export async function createTrialOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { wallet } = req.params;
+    const { playerId, detailsUri } = req.body as { playerId: string; detailsUri: string };
+
+    const result = await invokeContract('log_trial_offer', [strVal(wallet), strVal(playerId), strVal(detailsUri)]);
+    const createdAt = Math.floor(Date.now() / 1000);
+    insertTrialOffer(wallet, playerId, detailsUri, result.hash, createdAt);
+
+    res.status(201).json({ success: true, data: { transactionId: result.hash } });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ─── POST /api/scouts/:wallet/trial-offer ─────────────────────────────────────
 
 /** POST /api/scouts/:wallet/trial-offer */
@@ -432,6 +488,10 @@ export async function getPaymentHistory(req: Request, res: Response, next: NextF
     const { wallet } = req.params;
     if (!isValidStellarAddress(wallet)) {
       res.status(400).json({ success: false, error: 'Invalid Stellar address' });
+      return;
+    }
+    if (req.account !== wallet) {
+      res.status(403).json({ success: false, error: 'Forbidden: wallet does not match authenticated account', code: ErrorCode.WALLET_MISMATCH });
       return;
     }
     const { from, to } = req.query as { from?: string; to?: string };

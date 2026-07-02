@@ -18,6 +18,7 @@ const SECRET = process.env.JWT_SECRET ?? 'test-secret';
 jest.mock('../../src/db', () => ({
   getEvents: jest.fn().mockReturnValue([]),
   queryPlayers: jest.fn().mockReturnValue([]),
+  countPlayers: jest.fn().mockReturnValue(0),
   getPlayerById: jest.fn().mockReturnValue(null),
   getEventsCount: jest.fn().mockReturnValue(0),
   getLastLedger: jest.fn().mockReturnValue(0),
@@ -25,17 +26,31 @@ jest.mock('../../src/db', () => ({
   insertPlayerProfileHistory: jest.fn(),
   getPlayerProfileHistory: jest.fn().mockReturnValue([]),
   upsertPlayer: jest.fn(),
+  getPendingMilestones: jest.fn().mockReturnValue({ data: [], total: 0 }),
+  getContactUnlocksByScout: jest.fn().mockReturnValue([]),
+  hasContactUnlock: jest.fn().mockReturnValue(true),
+  insertContactUnlock: jest.fn(),
+  getLatestSubscription: jest.fn().mockReturnValue(null),
+  insertSubscription: jest.fn(),
+  dbRenewSubscription: jest.fn(),
+  dbCancelSubscription: jest.fn(),
+  getIdempotencyRecord: jest.fn().mockReturnValue(null),
+  saveIdempotencyRecord: jest.fn(),
 }));
 
 jest.mock('../../src/services/indexer', () => ({
   indexEvents: jest.fn(),
   normalizeEventId: jest.fn(),
+  insertValidator: jest.fn(),
+  revokeValidatorRow: jest.fn(),
+  getAllValidators: jest.fn().mockReturnValue([]),
 }));
 
 jest.mock('../../src/services/ipfs', () => ({
   pinJson: jest.fn().mockResolvedValue('QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'),
   checkHealth: jest.fn().mockResolvedValue(undefined),
   gatewayUrl: jest.fn((cid: string) => `https://gateway.pinata.cloud/ipfs/${cid}`),
+  gatewayUrls: jest.fn((cid: string) => [`https://gateway.pinata.cloud/ipfs/${cid}`]),
 }));
 
 jest.mock('../../src/services/webhooks', () => ({
@@ -45,6 +60,8 @@ jest.mock('../../src/services/webhooks', () => ({
 jest.mock('../../src/services/cache', () => ({
   invalidatePlayerCache: jest.fn(),
   invalidateMilestoneCache: jest.fn(),
+  cacheGet: jest.fn().mockReturnValue(undefined),
+  cacheSet: jest.fn(),
 }));
 
 jest.mock('../../src/services/stellar', () => ({
@@ -75,6 +92,12 @@ jest.mock('../../src/services/stellar', () => ({
       this.name = 'ContractActionError';
     }
   },
+  PaymentError: class PaymentError extends Error {
+    constructor(public message: string, public code: string) {
+      super(message);
+      this.name = 'PaymentError';
+    }
+  },
 }));
 
 jest.mock('../../src/services/audit', () => ({
@@ -98,9 +121,12 @@ function assertErrorEnvelope(body: Record<string, unknown>): void {
 // ─── Token helpers ─────────────────────────────────────────────────────────────
 
 const PLAYER_WALLET = 'G' + 'A'.repeat(55);
-const SCOUT_WALLET = 'G' + 'B'.repeat(55);
+const SCOUT_WALLET = 'GDBPLIP2NGJTWRGDEFQ5W32CX2K25S2V7LZMWUJI7GRKQCQAULL5A3MV';
 const VALIDATOR_WALLET = 'G' + 'C'.repeat(55);
-const ADMIN_WALLET = 'G' + 'D'.repeat(55);
+// Must match the ADMIN_WALLET default set in tests/setup.ts — pauseContract/
+// unpauseContract/withdrawFeesController require the caller's wallet to be in
+// config.adminWallets, not just the JWT role claim.
+const ADMIN_WALLET = 'GADMINAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4';
 
 function makeToken(wallet: string, role: string): string {
   return jwt.sign({ sub: wallet, role }, SECRET, { expiresIn: '1h' });
@@ -110,15 +136,6 @@ const playerToken = makeToken(PLAYER_WALLET, 'player');
 const scoutToken = makeToken(SCOUT_WALLET, 'scout');
 const validatorToken = makeToken(VALIDATOR_WALLET, 'validator');
 const adminToken = makeToken(ADMIN_WALLET, 'admin');
-
-async function getAuthToken(role: string): Promise<string> {
-  const kp = Keypair.random();
-  const challengeRes = await request(app).get(`/auth/challenge?account=${kp.publicKey()}`);
-  const tx = new Transaction(challengeRes.body.challenge, Networks.TESTNET);
-  tx.sign(kp);
-  const tokenRes = await request(app).post('/auth/token').send({ transaction: tx.toXDR(), role });
-  return tokenRes.body.token;
-}
 
 // ─── Auth routes (/auth/*) ────────────────────────────────────────────────────
 
@@ -528,23 +545,25 @@ describe('POST /api/admin/contract/unpause — envelope shape', () => {
 });
 
 describe('POST /api/admin/introspect — envelope shape', () => {
+  // introspectToken decodes the caller's own bearer token only — any `token`
+  // field in the body is intentionally ignored (#279), so it always succeeds
+  // for a valid admin caller regardless of body content.
   it('success: { success: true, data: object }', async () => {
-    const token = await getAuthToken('player');
     const res = await request(app)
       .post('/api/admin/introspect')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ token });
+      .send({});
     expect(res.status).toBe(200);
     assertSuccessEnvelope(res.body);
   });
 
-  it('error: { success: false, error: string } for invalid token', async () => {
+  it('ignores a garbage token field in the body and still succeeds', async () => {
     const res = await request(app)
       .post('/api/admin/introspect')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ token: 'not.a.jwt' });
-    expect(res.status).toBe(400);
-    assertErrorEnvelope(res.body);
+    expect(res.status).toBe(200);
+    assertSuccessEnvelope(res.body);
   });
 });
 

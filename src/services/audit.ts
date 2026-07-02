@@ -8,6 +8,12 @@ export interface AuditEvent {
   contractAction?: string;
   adminWallet?: string;
   queryParams?: Record<string, unknown>;
+  /** Optional: request path, for auth_failed/auth_forbidden events. */
+  path?: string;
+  /** Optional: human-readable reason, for auth_failed/auth_forbidden events. */
+  reason?: string;
+  /** Optional: role required by the route, for auth_failed/auth_forbidden events. */
+  requiredRole?: string;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { createHash } from "crypto";
 import { sanitizeInput } from "../utils/sanitizer";
 import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
@@ -7,6 +8,7 @@ import { pinJson } from "../services/ipfs";
 import { serializeIpfsResult } from "../utils/ipfsSerializer";
 import {
   getEvents,
+  getPlayerById,
   insertPlayerProfileHistory,
   queryPlayers,
   countPlayers,
@@ -22,6 +24,7 @@ import { validateMinTier } from "../utils/minTierValidator";
 import { normalizePosition } from "../utils/positionAliases";
 import { dispatchEventWebhook } from "../services/webhooks";
 import { enrichPlayerResult } from "../utils/searchEnrichment";
+import { playerIdSchema } from "../utils/playerIdValidator";
 import { recordAudit } from "../utils/audit";
 
 const baseRegistrationSchema = z.object({
@@ -51,17 +54,6 @@ export const filterSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
-
-/**
- * Returns the first player_registered event payload for the given playerId,
- * or undefined if no such player exists.
- */
-export function getPlayerById(playerId: string): Record<string, unknown> | undefined {
-  const events = getEvents('player_registered').filter(
-    (e) => e.payload.player_id === playerId
-  );
-  return events.length ? events[0].payload : undefined;
-}
 
 /** POST /api/players/register */
 export async function registerPlayer(
@@ -138,31 +130,41 @@ export async function getPlayer(
   next: NextFunction,
 ) {
   try {
+    const idResult = playerIdSchema.safeParse(req.params.playerId);
+    if (!idResult.success) {
+      res.status(400).json({ success: false, error: idResult.error.errors[0]?.message ?? "Invalid playerId", code: ErrorCode.VALIDATION_ERROR });
+      return;
+    }
     const playerId = sanitizeInput(req.params.playerId);
     const cacheKey = `players:${playerId}`;
-    const cached = cacheGet<Record<string, unknown>>(cacheKey);
-    if (cached) {
-      res.json({ success: true, data: cached });
+    let data = cacheGet<Record<string, unknown>>(cacheKey);
+    if (!data) {
+      const row = getPlayerById(playerId);
+      if (!row) {
+        res.status(404).json({ success: false, error: "Player not found", code: ErrorCode.PLAYER_NOT_FOUND });
+        return;
+      }
+      const { tierName, tierDescription } = getTierMeta(row.progress_level as number);
+      data = {
+        player_id: row.player_id,
+        wallet: row.wallet,
+        position: row.position,
+        region: row.region,
+        metadataUri: row.metadata_uri,
+        progress_level: row.progress_level,
+        created_at: row.created_at,
+        tierName,
+        tierDescription,
+      };
+      cacheSet(cacheKey, data);
+    }
+
+    const etag = `"${createHash("sha1").update(JSON.stringify(data)).digest("hex")}"`;
+    if (req.headers["if-none-match"] === etag) {
+      res.status(304).end();
       return;
     }
-    const row = getPlayerById(playerId);
-    if (!row) {
-      res.status(404).json({ success: false, error: "Player not found", code: ErrorCode.PLAYER_NOT_FOUND });
-      return;
-    }
-    const { tierName, tierDescription } = getTierMeta(row.progress_level as number);
-    const data = {
-      player_id: row.player_id,
-      wallet: row.wallet,
-      position: row.position,
-      region: row.region,
-      metadataUri: row.metadata_uri,
-      progress_level: row.progress_level,
-      created_at: row.created_at,
-      tierName,
-      tierDescription,
-    };
-    cacheSet(cacheKey, data);
+    res.set("ETag", etag);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -310,6 +312,11 @@ export async function getPlayerMilestones(
   next: NextFunction,
 ) {
   try {
+    const idResult = playerIdSchema.safeParse(req.params.playerId);
+    if (!idResult.success) {
+      res.status(400).json({ success: false, error: idResult.error.errors[0]?.message ?? "Invalid playerId", code: ErrorCode.VALIDATION_ERROR });
+      return;
+    }
     const playerId = sanitizeInput(req.params.playerId);
 
     const parsed = milestonesQuerySchema.safeParse(req.query);

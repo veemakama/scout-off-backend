@@ -298,6 +298,7 @@ export interface GetPendingMilestonesOptions {
   validatorWallet?: string;
   position?: string;
   region?: string;
+  playerId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -319,6 +320,10 @@ export function getPendingMilestones(options: GetPendingMilestonesOptions): { da
   if (options.region) {
     whereConditions.push('p.region = ?');
     params.push(options.region);
+  }
+  if (options.playerId) {
+    whereConditions.push('pm.player_id = ?');
+    params.push(options.playerId);
   }
 
   const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -376,7 +381,7 @@ export function queryPlayers(opts: QueryPlayersOptions): PlayerRow[] {
   const { where, params } = buildPlayerWhereClause(opts);
   const limit = opts.limit ?? 20;
   const offset = opts.offset ?? 0;
-  const sql = `SELECT * FROM players ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  const sql = `SELECT * FROM players ${where} ORDER BY created_at ASC LIMIT ? OFFSET ?`;
   return timedQuery(sql, () =>
     getDb().prepare(sql).all(...params, limit, offset) as PlayerRow[]
   );

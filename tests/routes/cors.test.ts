@@ -12,6 +12,16 @@ describe('CORS origin allowlist', () => {
 
   beforeEach(() => {
     jest.resetModules();
+    // config.ts requires ADMIN_WALLET in production/staging and PLATFORM_SECRET_KEY
+    // in every non-test NODE_ENV; these tests reload config under various NODE_ENV
+    // values, so both must be present regardless of which env a given test sets.
+    process.env.ADMIN_WALLET = 'GADMINWALLET1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    process.env.PLATFORM_SECRET_KEY = 'SPLATFORMSECRETKEY1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  });
+
+  afterEach(() => {
+    delete process.env.ADMIN_WALLET;
+    delete process.env.PLATFORM_SECRET_KEY;
   });
 
   it('allows requests from an allowlisted origin in production', async () => {

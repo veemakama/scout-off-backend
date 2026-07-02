@@ -69,12 +69,17 @@ describe('POST /api/admin/fees — concurrent withdrawal mutex', () => {
     });
     mockWithdrawFees.mockReturnValueOnce(firstPromise);
 
-    const first = request(app)
-      .post('/api/admin/fees')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ recipient: VALID_RECIPIENT });
+    // Use .end() with a callback so the request is dispatched immediately
+    // instead of lazily on the next tick — needed to guarantee it's actually
+    // in flight before the second request fires below.
+    const first = new Promise<request.Response>((resolve, reject) => {
+      request(app)
+        .post('/api/admin/fees')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ recipient: VALID_RECIPIENT })
+        .end((err, res) => (err ? reject(err) : resolve(res)));
+    });
 
-    // Allow event loop to start processing first request
     await new Promise((r) => setImmediate(r));
 
     // Second request while first is in flight — should be rejected

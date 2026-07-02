@@ -17,7 +17,7 @@ import axios from 'axios';
 const mockedPost = jest.fn();
 (axios as jest.Mocked<typeof axios>).post = mockedPost;
 
-// Stub DB helpers — not under test here
+// Stub DB helpers ï¿½ not under test here
 jest.mock('../../src/db', () => ({
   insertPendingPin: jest.fn(),
   getPendingPins: jest.fn().mockReturnValue([]),
@@ -106,7 +106,7 @@ describe('pinJson deduplication cache', () => {
 
     jest.useFakeTimers();
 
-    const ttlMs = (config as any).pinJsonCacheTtlMs as number;
+    const ttlMs = config.pinJsonCacheTtlMs;
     const metadata = { playerId: 'P003', position: 'defender' };
 
     const cid1 = await pinJson(metadata);

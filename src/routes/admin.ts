@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getStats, getAllEvents, getFeeSummary, registerValidator, revokeValidator, pauseContract, unpauseContract, withdrawFeesController, introspectToken, reindex, getValidatorStatsEndpoint, getAuditLog } from '../controllers/adminController';
+import { getStats, getAllEvents, getFeeSummary, listValidators, registerValidator, revokeValidator, pauseContract, unpauseContract, withdrawFeesController, introspectToken, revokeTokenController, reindex, getValidatorStatsEndpoint, getAuditLog } from '../controllers/adminController';
 import { exportEvents } from '../controllers/exportController';
 import { requireRole } from '../middleware/auth';
 import { ipAllowlistMiddleware } from '../middleware/ipAllowlist';
@@ -121,7 +121,6 @@ router.post('/validators/register', requireRole('admin'), registerValidator);
  * @auth Bearer (admin role required)
  */
 router.post('/validators/revoke', requireRole('admin'), revokeValidator);
-router.post('/contract/pause', requireRole('admin'), pauseContract);
 
 /**
  * POST /api/admin/contract/pause
@@ -162,6 +161,22 @@ router.post('/contract/unpause', requireRole('admin'), unpauseContract);
  * @auth Bearer (admin role required)
  */
 router.post('/introspect', requireRole('admin'), introspectToken);
+
+/**
+ * POST /api/admin/tokens/revoke
+ *
+ * Adds a JWT's jti claim to the revocation blocklist so requireAuth/requireRole
+ * reject it on subsequent requests, even if it has not yet expired.
+ *
+ * @body { jti?: string, token?: string } - Provide either the jti directly or a
+ *   full token to extract it from.
+ * @response 200 { success: true, data: { jti } }
+ * @response 400 { success: false, error: string } - Neither jti nor token provided, or token has no jti
+ * @response 401 { success: false, error: string } - Missing token
+ * @response 403 { success: false, error: string } - Non-admin role
+ * @auth Bearer (admin role required)
+ */
+router.post('/tokens/revoke', requireRole('admin'), revokeTokenController);
 
 /**
  * POST /api/admin/indexer/reindex

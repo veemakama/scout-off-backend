@@ -4,6 +4,8 @@ import config from '../config';
 import { JwtPayload } from '../types';
 import { sendUnauthorized, sendForbidden } from '../utils/authError';
 import { logger } from '../utils/logger';
+import { isTokenRevoked } from '../services/tokenBlocklist';
+import { logAuditEvent } from '../services/audit';
 
 export interface AuthPayload extends jwt.JwtPayload, Partial<JwtPayload> {}
 
@@ -36,16 +38,23 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     logger.warn({ method: req.method, path: req.path, error: 'Missing auth token' });
+    logAuditEvent({ action: 'auth_failed', path: req.path, reason: 'Missing auth token', timestamp: new Date().toISOString() });
     sendUnauthorized(res, 'Missing auth token');
     return;
   }
   try {
     const payload = verifyToken(header.slice(7));
+    if (payload.jti && isTokenRevoked(payload.jti)) {
+      logger.warn({ method: req.method, path: req.path, error: 'Token revoked' });
+      sendUnauthorized(res, 'Token has been revoked');
+      return;
+    }
     req.account = payload.sub;
     req.role = payload.role;
     next();
   } catch {
     logger.warn({ method: req.method, path: req.path, error: 'Invalid or expired token' });
+    logAuditEvent({ action: 'auth_failed', path: req.path, reason: 'Invalid or expired token', timestamp: new Date().toISOString() });
     sendUnauthorized(res, 'Invalid or expired token');
   }
 }
@@ -64,6 +73,7 @@ export function requireRole(role: string) {
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
       logger.warn({ method: req.method, path: req.path, error: 'Missing auth token', requiredRole: role });
+      logAuditEvent({ action: 'auth_failed', path: req.path, reason: 'Missing auth token', requiredRole: role, timestamp: new Date().toISOString() });
       sendUnauthorized(res, 'Missing auth token');
       return;
     }
@@ -80,7 +90,14 @@ export function requireRole(role: string) {
           requiredRole: role,
           providedRole: payload.role,
         });
+        logAuditEvent({ action: 'auth_forbidden', path: req.path, reason: 'Insufficient permissions', requiredRole: role, timestamp: new Date().toISOString() });
         sendForbidden(res, 'Insufficient permissions', { requiredRole: role, providedRole: payload.role });
+        return;
+      }
+
+      if (payload.jti && isTokenRevoked(payload.jti)) {
+        logger.warn({ method: req.method, path: req.path, error: 'Token revoked', requiredRole: role });
+        sendUnauthorized(res, 'Token has been revoked');
         return;
       }
 
@@ -89,6 +106,7 @@ export function requireRole(role: string) {
       next();
     } catch {
       logger.warn({ method: req.method, path: req.path, error: 'Invalid or expired token', requiredRole: role });
+      logAuditEvent({ action: 'auth_failed', path: req.path, reason: 'Invalid or expired token', requiredRole: role, timestamp: new Date().toISOString() });
       sendUnauthorized(res, 'Invalid or expired token');
     }
   };

@@ -4,6 +4,7 @@ process.env.JWT_SECRET = 'test-secret';
 describe('config NODE_ENV toggles', () => {
   const originalEnv = process.env.NODE_ENV;
   const originalAdminWallet = process.env.ADMIN_WALLET;
+  const originalPlatformSecretKey = process.env.PLATFORM_SECRET_KEY;
 
   afterEach(() => {
     process.env.NODE_ENV = originalEnv;
@@ -11,6 +12,11 @@ describe('config NODE_ENV toggles', () => {
       process.env.ADMIN_WALLET = originalAdminWallet;
     } else {
       delete process.env.ADMIN_WALLET;
+    }
+    if (originalPlatformSecretKey !== undefined) {
+      process.env.PLATFORM_SECRET_KEY = originalPlatformSecretKey;
+    } else {
+      delete process.env.PLATFORM_SECRET_KEY;
     }
     jest.resetModules();
   });
@@ -21,6 +27,10 @@ describe('config NODE_ENV toggles', () => {
     if (env === 'production' || env === 'staging') {
       process.env.ADMIN_WALLET = 'GADMINWALLET1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     }
+    // PLATFORM_SECRET_KEY is required in every non-test environment
+    if (env !== 'test') {
+      process.env.PLATFORM_SECRET_KEY = 'SPLATFORMSECRETKEY1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    }
     jest.resetModules();
     const mod = await import('../src/config');
     return mod.default;
@@ -30,6 +40,9 @@ describe('config NODE_ENV toggles', () => {
     process.env.NODE_ENV = env;
     if (env === 'production' || env === 'staging') {
       process.env.ADMIN_WALLET = 'GADMINWALLET1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    }
+    if (env !== 'test') {
+      process.env.PLATFORM_SECRET_KEY = 'SPLATFORMSECRETKEY1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     }
     jest.resetModules();
     return import('../src/config');

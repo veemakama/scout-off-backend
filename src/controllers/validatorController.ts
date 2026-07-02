@@ -25,6 +25,7 @@ export const milestoneSchema = z.object({
 export const pendingQuerySchema = z.object({
   region: z.string().optional(),
   position: z.string().optional(),
+  playerId: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
@@ -58,12 +59,13 @@ export async function submitMilestoneEvidence(req: Request, res: Response, next:
 /** GET /api/validators/milestones/pending or /api/validators/:wallet/milestones/pending */
 export async function getPendingMilestones(req: Request, res: Response, next: NextFunction) {
   try {
-    const { region, position, page, pageSize } = pendingQuerySchema.parse(req.query);
+    const { region, position, playerId, page, pageSize } = pendingQuerySchema.parse(req.query);
     const validatorWallet = req.params.wallet || req.account;
     const { data, total } = getPendingMilestonesFromDb({
       validatorWallet: validatorWallet,
       region,
       position,
+      playerId,
       page,
       pageSize,
     });

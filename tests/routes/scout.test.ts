@@ -33,10 +33,12 @@ jest.mock('../../src/services/stellar', () => ({
   },
 }));
 
-import { getEvents, getPlayerById } from '../../src/db';
+import { getEvents, getPlayerById, getContactUnlocksByScout, hasContactUnlock } from '../../src/db';
 import { submitContactPayment, purchaseSubscription, isSubscribed } from '../../src/services/stellar';
 const mockGetEvents = getEvents as jest.Mock;
 const mockGetPlayerById = getPlayerById as jest.Mock;
+const mockGetContactUnlocksByScout = getContactUnlocksByScout as jest.Mock;
+const mockHasContactUnlock = hasContactUnlock as jest.Mock;
 const mockSubmitContactPayment = submitContactPayment as jest.Mock;
 const mockPurchaseSubscription = purchaseSubscription as jest.Mock;
 const mockIsSubscribed = isSubscribed as jest.Mock;
@@ -52,12 +54,14 @@ function makeValidatorToken(wallet: string): string {
   return makeToken(wallet, 'validator');
 }
 
-const WALLET = 'GSCOUTWALLET1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-const OTHER  = 'GOTHERWALLET2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const WALLET = 'GAAKO6EK5AIJWZH7ITXBFZTPASYKPY3YVMFVFVD5UDG2C6NUIXTT7BE3';
+const OTHER  = 'GAEZS7NMWCNTUFGDNXWVYVTKGGP47CESPEV5BVT5LNFHKXC5TGBZ4O5O';
 
 beforeEach(() => {
   mockGetEvents.mockReset();
   mockGetPlayerById.mockReset();
+  mockGetContactUnlocksByScout.mockReset().mockReturnValue([]);
+  mockHasContactUnlock.mockReset().mockReturnValue(false);
   mockIsSubscribed.mockReset().mockResolvedValue({ active: false, expiresAt: null });
   // Ensure getLatestSubscription returns null by default
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -174,22 +178,28 @@ describe('GET /api/scouts/:wallet/subscription', () => {
 
   it('accepts 1 and 365 duration values for subscribe endpoint', async () => {
     const token = makeToken(WALLET);
+    mockPurchaseSubscription.mockResolvedValue({
+      transactionId: 'tx-duration',
+      tier: 'basic',
+      expiresAt: Math.floor(Date.now() / 1000) + 86400,
+      status: 'active',
+    });
 
     let res = await request(app)
       .post(`/api/scouts/${WALLET}/subscribe`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ duration: 1 });
-    expect(res.status).toBe(200);
+      .send({ tier: 'basic', duration: 1 });
+    expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.duration).toBe(1);
+    expect(mockPurchaseSubscription).toHaveBeenCalledWith(WALLET, 'basic', 1);
 
     res = await request(app)
       .post(`/api/scouts/${WALLET}/subscribe`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ duration: 365 });
-    expect(res.status).toBe(200);
+      .send({ tier: 'basic', duration: 365 });
+    expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.duration).toBe(365);
+    expect(mockPurchaseSubscription).toHaveBeenCalledWith(WALLET, 'basic', 365);
   });
 
   it('returns expired subscription as inactive with 0 remainingDays', async () => {
@@ -236,7 +246,7 @@ describe('GET /api/scouts/:wallet/subscription', () => {
         source: 'contract',
         type: 'scout_subscribed',
         contractAddress: 'contract',
-        payload: { scout: WALLET, subscriptionExpiry: expiresAt, tier: 'premium' },
+        payload: { scout: WALLET, subscription_expiry: expiresAt, tier: 'premium' },
       },
     ]);
     const token = makeToken(WALLET);
@@ -255,7 +265,7 @@ describe('GET /api/scouts/:wallet/subscription', () => {
         source: 'contract',
         type: 'scout_subscribed',
         contractAddress: 'contract',
-        payload: { scout: WALLET, subscriptionExpiry: expiresAt, tier: 'basic' },
+        payload: { scout: WALLET, subscription_expiry: expiresAt, tier: 'basic' },
       },
     ]);
     const token = makeToken(WALLET);
@@ -298,19 +308,9 @@ describe('GET /api/scouts/:wallet/contacts', () => {
 
   it('returns contacts with correct shape', async () => {
     const unlockedAt = Math.floor(Date.now() / 1000) - 3600;
-    mockGetEvents.mockReturnValue([
-      {
-        source: 'contract',
-        type: 'contact_unlocked',
-        contractAddress: 'contract',
-        payload: { scout: WALLET, player_id: 'player-42', unlocked_at: unlockedAt },
-      },
-      {
-        source: 'contract',
-        type: 'contact_unlocked',
-        contractAddress: 'contract',
-        payload: { scout: WALLET, player_id: 'player-99', unlocked_at: unlockedAt + 100 },
-      },
+    mockGetContactUnlocksByScout.mockReturnValue([
+      { scout_wallet: WALLET, player_id: 'player-42', tx_hash: 'tx-1', unlocked_at: unlockedAt },
+      { scout_wallet: WALLET, player_id: 'player-99', tx_hash: 'tx-2', unlocked_at: unlockedAt + 100 },
     ]);
     const token = makeToken(WALLET);
     const res = await request(app)
@@ -542,14 +542,7 @@ describe('GET /api/scouts/:wallet/contacts/:playerId', () => {
 
   it('returns player contact details on success', async () => {
     mockGetPlayerById.mockReturnValue(MOCK_PLAYER);
-    mockGetEvents.mockReturnValue([
-      {
-        source: 'contract',
-        type: 'contact_unlocked',
-        contractAddress: 'contract',
-        payload: { scout: WALLET, player_id: PLAYER_ID, unlocked_at: 12345 },
-      },
-    ]);
+    mockHasContactUnlock.mockReturnValue(true);
     const token = makeToken(WALLET);
     const res = await request(app)
       .get(`/api/scouts/${WALLET}/contacts/${PLAYER_ID}`)
