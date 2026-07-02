@@ -281,8 +281,6 @@ export async function introspectToken(req: Request, res: Response, next: NextFun
       res.status(400).json({ success: false, error: 'Invalid or expired token', code: ErrorCode.TOKEN_INVALID });
       return;
     }
-
-    // Return only non-secret metadata fields
     res.json({
       success: true,
       data: {
