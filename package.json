@@ -9,7 +9,7 @@
     "build": "tsc",
     "prestart": "node scripts/validate-env.js",
     "start": "node dist/index.js",
-    "test": "jest --runInBand",
+    "test": "node node_modules/jest/bin/jest.js --runInBand",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --ext .ts",
     "seed": "ts-node --project tsconfig.scripts.json scripts/seed.ts"
   },
